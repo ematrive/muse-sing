@@ -1,0 +1,46 @@
+# macOS installer (universal: Apple Silicon + Intel), published as a GitHub release when a tag
+# vX.Y.Z is pushed. Same build as scripts/release-mac.sh, ad-hoc signed (no Apple certificate).
+name: Rilascio
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # "-" = ad-hoc signature: without any signature macOS forgets the microphone permission
+          APPLE_SIGNING_IDENTITY: "-"
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Muse Sing ${{ github.ref_name }}"
+          releaseBody: "Novità: vedi [CHANGELOG.md](https://github.com/ematrive/muse-sing/blob/main/CHANGELOG.md). Su Mac la prima volta: `xattr -cr \"/Applications/Muse Sing.app\"` (l'app non è firmata da Apple)."
+          releaseDraft: false
+          prerelease: false
+          args: --target universal-apple-darwin
+      - name: Verifica firma ad-hoc
+        run: |
+          app="src-tauri/target/universal-apple-darwin/release/bundle/macos/Muse Sing.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -q "Signature=adhoc"

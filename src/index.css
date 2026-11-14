@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  font-size: 13px;
+  user-select: none;
+}
+input, textarea, select { user-select: text; }
+
+@layer components {
+  .field {
+    @apply w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 outline-none
+      focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20
+      dark:border-zinc-700 dark:bg-zinc-900;
+  }
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium
+      hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800;
+  }
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-4 py-2 font-semibold text-white
+      hover:bg-violet-500 disabled:opacity-50;
+  }
+  .card {
+    @apply rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400;
+  }
+}
+
+/* Manual and changelog (rendered Markdown) */
+.manual { @apply text-[14px] leading-relaxed text-zinc-800 dark:text-zinc-200; user-select: text; }
+.manual h1 { @apply mb-4 text-2xl font-bold; }
+.manual h2 { @apply mt-10 mb-3 scroll-mt-4 border-b border-zinc-200 pb-1 text-xl font-semibold dark:border-zinc-800; }
+.manual h3 { @apply mt-6 mb-2 scroll-mt-4 text-base font-semibold; }
+.manual p { @apply my-2.5; }
+.manual ul { @apply my-2.5 list-disc space-y-1 pl-6; }
+.manual ol { @apply my-2.5 list-decimal space-y-1 pl-6; }
+.manual li > ul, .manual li > ol { @apply my-1; }
+.manual a { @apply break-all text-violet-700 underline decoration-violet-300 hover:decoration-violet-600 dark:text-violet-300; cursor: pointer; }
+.manual code { @apply rounded bg-zinc-100 px-1 py-0.5 font-mono text-[12.5px] dark:bg-zinc-800; }
+.manual pre { @apply my-3 overflow-x-auto rounded-lg bg-zinc-900 p-3 text-zinc-100 dark:bg-black; }
+.manual pre code { @apply bg-transparent p-0 text-zinc-100; }
+.manual table { @apply my-3 w-full border-collapse text-[13px]; }
+.manual th { @apply border-b-2 border-zinc-300 px-2 py-1.5 text-left font-semibold dark:border-zinc-700; }
+.manual td { @apply border-b border-zinc-200 px-2 py-1.5 align-top dark:border-zinc-800; }
+.manual strong { @apply font-semibold; }

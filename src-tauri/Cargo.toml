@@ -2,7 +2,8 @@
 name = "muse-sing"
 version = "0.2.0"
 description = "MuseScore -> OpenUtau (DiffSinger) project converter"
-authors = ["Sintattica"]
+authors = ["Emanuele Trivella"]
+license = "MIT"
 edition = "2024"
 
 [lib]

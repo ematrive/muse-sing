@@ -105,3 +105,7 @@ cd src-tauri && cargo test   # test del motore (su Linux serve libasound2-dev pe
 - `src-tauri/src/singers.rs`: cantanti installati in OpenUtau (l'id è la cartella di `character.txt`, relativa a `Singers`).
 - `src-tauri/tests/fixtures.rs`: confronta i progetti con quelli dello script Python di riferimento (`../tools/mscz_to_ustx.py`) sui quattro brani di prova. Le partiture del coro non sono nel repository: senza `src-tauri/tests/fixtures/` questi test vengono saltati.
 - `preview.html`: interfaccia nel browser con il backend simulato, solo per lo sviluppo (`pnpm dev`, poi `/preview.html?auto=1`). La scheda di conversione usa le analisi dei brani (`src/preview-santo.json`, `src/preview-sonnet.json`), anch'esse solo in locale.
+
+## Licenza
+
+Codice: [MIT](LICENSE), © 2026 Emanuele Trivella. La licenza non riguarda i voicebank e il vocoder (con licenze proprie, non commerciali) né le voci registrate, che restano di chi le ha registrate.

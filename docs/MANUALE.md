@@ -256,4 +256,4 @@ Usa cuffie chiuse e abbassa il volume, oppure spegni «melodia in cuffia mentre 
 
 - **Gahata Meiji** (LUNAI Project) e **TIGER DS** (tigermeat): gratuiti solo per uso non commerciale, citando l'autore. Non si possono ridistribuire.
 - **Cantanti costruiti con la scheda Registra:** la voce appartiene a chi l'ha registrata. Usali solo per il coro e con il suo consenso. La parte che produce l'audio finale (il vocoder openvpi) ha licenza CC BY-NC-SA 4.0, cioè non commerciale.
-- **Muse Sing:** © 2026 Sintattica.
+- **Muse Sing:** © 2026 Emanuele Trivella, licenza MIT.

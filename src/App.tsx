@@ -1,5 +1,6 @@
 import { AudioLines, BookOpen, Mic2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { checkForUpdate, hasNews, markNewsSeen } from "./lib/update";
 import Convert from "./views/Convert";
 import Manual, { type ManualPage } from "./views/Manual";
 import Record from "./views/Record";
@@ -12,6 +13,11 @@ export default function App() {
     return t === "record" || t === "manual" ? t : "convert";
   });
   const [manualPage, setManualPage] = useState<ManualPage>("manual");
+  const [news, setNews] = useState(hasNews);
+  const [updating, setUpdating] = useState<string | null>(null);
+  useEffect(() => {
+    checkForUpdate(setUpdating);
+  }, []);
   const tabBtn = (t: Tab, label: string, Icon: typeof Mic2) => (
     <button
       onClick={() => setTab(t)}
@@ -30,16 +36,20 @@ export default function App() {
         {tabBtn("convert", "Da MuseScore a OpenUtau", Mic2)}
         {tabBtn("record", "Registra un cantante", AudioLines)}
         <div className="ml-auto flex items-center gap-2">
+          {updating && <span className="text-xs text-violet-600 dark:text-violet-400">{updating}</span>}
           {tabBtn("manual", "Manuale", BookOpen)}
           <button
-            className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-            title="Novità di questa versione"
+            className="relative rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            title={news ? "Ci sono novità in questa versione: clic per leggerle" : "Novità di questa versione"}
             onClick={() => {
               setManualPage("changelog");
               setTab("manual");
+              markNewsSeen();
+              setNews(false);
             }}
           >
             v{__APP_VERSION__}
+            {news && <span data-news className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-600" />}
           </button>
         </div>
       </header>

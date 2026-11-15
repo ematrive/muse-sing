@@ -81,6 +81,7 @@ mockIPC(
     if (cmd === "plugin:dialog|save") return "/Users/utente/Music/Santo.ustx";
     if (cmd === "voice_recent") return [{ dir: voice.dir, name: voice.profile.name }];
     if (cmd === "voice_open" || cmd === "voice_create") return voice;
+    if (cmd === "plugin:updater|check") return null;
     if (cmd === "audio_devices") return devices;
     if (cmd === "audio_open")
       return {

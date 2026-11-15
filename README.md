@@ -64,7 +64,7 @@ mkdir -p ~/Library/OpenUtau/Singers/<Nome> && cd ~/Library/OpenUtau/Singers/<Nom
 
 ## Installazione e rilasci
 
-Il `.dmg` per Mac (Apple Silicon e Intel) è nelle [release](https://github.com/ematrive/muse-sing/releases): si crea da solo su GitHub quando si pubblica un tag `vX.Y.Z` (`.github/workflows/release.yml`). Ad ogni push su `main` girano build e test (`.github/workflows/ci.yml`).
+Il `.dmg` per Mac (Apple Silicon e Intel) è nelle [release](https://github.com/ematrive/muse-sing/releases): si crea da solo su GitHub quando si pubblica un tag `vX.Y.Z` (`.github/workflows/release.yml`). Ad ogni push su `main` girano build e test (`.github/workflows/ci.yml`). L'app installata trova da sola le versioni nuove all'avvio. Come pubblicare una versione e la chiave che firma gli aggiornamenti: [docs/rilascio.md](docs/rilascio.md).
 
 ## Creare l'app sul Mac
 

@@ -2,7 +2,16 @@
 
 Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'intestazione dell'app, accanto a «Manuale».
 
-## 0.3.0 — 15 novembre 2026
+## 0.4.0 — 15 novembre 2026
+
+### Nuovo
+- **Aggiornamenti dall'app:** all'avvio Muse Sing controlla se c'è una versione nuova, mostra le novità e, se vuoi, si aggiorna e si riavvia da sola.
+- Un pallino accanto al numero di versione segnala le novità non ancora lette.
+
+### Corretto
+- Passando alla 0.3.0 l'app dimenticava i cantanti recenti e i voicebank scelti per ogni lingua: ora li recupera dalla versione precedente. Le registrazioni non erano state toccate.
+
+## 0.3.0 — 15 novembre 2026 (pre-release)
 
 ### Nuovo
 - **Registra un cantante: guida interattiva.**
@@ -15,7 +24,6 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 - Conteggio con i pallini dei colpi e la prima nota da cantare.
 
 ### Corretto
-<!-- 0.3.0 è una pre-release: le correzioni audio con cuffie Bluetooth sono da confermare su un Mac -->
 - A volte il conteggio si sentiva solo dal «2», soprattutto con cuffie Bluetooth: microfono e cuffie ora si aprono una volta sola all'inizio della sessione, e conteggio e linea rossa seguono l'audio che esce davvero.
 - Errori saltuari di connessione al microfono: l'apertura riprova da sola, e il messaggio spiega la causa.
 - Le registrazioni restano allineate anche con il ritardo delle cuffie Bluetooth.

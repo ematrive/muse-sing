@@ -54,6 +54,8 @@ Riapri OpenUtau e controlla in **Strumenti → Cantanti** che i cantanti compaia
    xattr -cr "/Applications/Muse Sing.app"
    ```
 
+**Aggiornamenti e novità.** All'avvio Muse Sing controlla se c'è una versione nuova. Se c'è, mostra le novità e chiede se aggiornare: con «Aggiorna» scarica, installa e si riavvia da sola. Il numero di versione in alto a destra apre le novità di ogni versione; un pallino viola segnala quelle che non hai ancora letto. Dopo un aggiornamento macOS può chiedere di nuovo il permesso per il microfono, una volta.
+
 ## Da MuseScore a OpenUtau
 
 1. Apri la scheda **Da MuseScore a OpenUtau**.

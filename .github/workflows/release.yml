@@ -1,5 +1,6 @@
 # macOS installer (universal: Apple Silicon + Intel), published as a GitHub release when a tag
-# vX.Y.Z is pushed. Same build as scripts/release-mac.sh, ad-hoc signed (no Apple certificate).
+# vX.Y.Z is pushed (see docs/rilascio.md). Ad-hoc signed (bundle.macOS.signingIdentity "-"),
+# no Apple certificate. The app checks this release at startup (latest.json) to update itself.
 name: Rilascio
 
 on:
@@ -30,8 +31,9 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # "-" = ad-hoc signature: without any signature macOS forgets the microphone permission
-          APPLE_SIGNING_IDENTITY: "-"
+          # Signs the updates (not the app): the app accepts only updates signed with this key.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Muse Sing ${{ github.ref_name }}"

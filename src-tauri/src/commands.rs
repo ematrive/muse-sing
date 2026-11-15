@@ -124,9 +124,25 @@ fn prefs_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|d| d.join("prefs.json"))
 }
 
+/// Identifier of versions up to 0.3.0: their preferences live in a sibling config folder.
+const OLD_IDENTIFIER: &str = "it.sintattica.musesing";
+
+/// Reads `prefs.json`; if missing, copies the one of the old identifier next to it (recent singers,
+/// voicebank per language), so updating from 0.2/0.3 keeps them.
+fn read_prefs_text(path: &Path) -> Option<String> {
+    if let Ok(t) = std::fs::read_to_string(path) {
+        return Some(t);
+    }
+    let old = path.parent()?.parent()?.join(OLD_IDENTIFIER).join("prefs.json");
+    let t = std::fs::read_to_string(old).ok()?;
+    let _ = std::fs::create_dir_all(path.parent()?);
+    let _ = std::fs::write(path, &t);
+    Some(t)
+}
+
 fn load_prefs(app: &tauri::AppHandle) -> Prefs {
     prefs_path(app)
-        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|p| read_prefs_text(&p))
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
 }
@@ -397,4 +413,28 @@ pub async fn audio_note(state: State<'_, AudioState>, pitch: i32, seconds: f64) 
 #[tauri::command]
 pub fn audio_stop(state: State<AudioState>) {
     state.0.stop();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefs_recovered_from_old_identifier() {
+        let base = std::env::temp_dir().join(format!("muse-sing-prefs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let new = base.join("app.musesing.desktop").join("prefs.json");
+        assert_eq!(read_prefs_text(&new), None, "nothing anywhere");
+
+        std::fs::create_dir_all(base.join(OLD_IDENTIFIER)).unwrap();
+        std::fs::write(base.join(OLD_IDENTIFIER).join("prefs.json"), r#"{"singer":{"it":"x"}}"#).unwrap();
+        let t = read_prefs_text(&new).unwrap();
+        assert!(t.contains("\"it\""));
+        assert!(new.exists(), "copied to the new folder");
+
+        // the new file wins from now on
+        std::fs::write(&new, "{}").unwrap();
+        assert_eq!(read_prefs_text(&new).unwrap(), "{}");
+        std::fs::remove_dir_all(base).ok();
+    }
 }

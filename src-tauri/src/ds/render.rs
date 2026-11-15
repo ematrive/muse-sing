@@ -80,7 +80,14 @@ impl RPhrase {
     }
 }
 
-/// Splits phonemes into phrases where they stop touching (PhraseSource.FromPart).
+/// A phrase longer than this is cut at the next word: the models' memory grows with the square
+/// of the phrase length (a 74 s phrase without rests took tens of GB and the app was killed).
+pub const MAX_PHRASE_MS: f64 = 10_000.0;
+/// Without a word boundary, cut anyway at this length.
+const HARD_MAX_PHRASE_MS: f64 = 20_000.0;
+
+/// Splits phonemes into phrases where they stop touching (PhraseSource.FromPart), and long ones
+/// at a word boundary (not in OpenUtau, which renders them whole).
 pub fn phrases(ph: &Phonemized, notes: &[PNote], axis: &TimeAxis) -> Vec<RPhrase> {
     let mut out: Vec<RPhrase> = vec![];
     let mut cur: Vec<&Phone> = vec![];
@@ -116,10 +123,12 @@ pub fn phrases(ph: &Phonemized, notes: &[PNote], axis: &TimeAxis) -> Vec<RPhrase
         cur.clear();
     };
     for p in &ph.phones {
-        if let Some(last) = cur.last()
-            && last.end != p.position
-        {
-            flush(&mut cur);
+        if let (Some(first), Some(last)) = (cur.first(), cur.last()) {
+            let span = axis.tick_to_ms(p.position as f64) - axis.tick_to_ms(first.position as f64);
+            let word_start = p.group != last.group;
+            if last.end != p.position || (span >= MAX_PHRASE_MS && word_start) || span >= HARD_MAX_PHRASE_MS {
+                flush(&mut cur);
+            }
         }
         cur.push(p);
     }
@@ -472,7 +481,12 @@ pub fn render_track(
         if !progress(i, list.len()) {
             return Ok(None);
         }
-        match render_phrase(vb, phrase, s) {
+        let t0 = std::time::Instant::now();
+        let len_s = (phrase.phones.last().map(|p| p.end_ms).unwrap_or(0.0) - phrase.pos_ms()) / 1000.0;
+        crate::log!("frase {}/{}: da {:.1} s, lunga {:.1} s, {} fonemi", i + 1, list.len(), phrase.pos_ms() / 1000.0, len_s, phrase.phones.len());
+        let result = render_phrase(vb, phrase, s);
+        crate::log!("frase {}/{}: {} in {:.1} s", i + 1, list.len(), if result.is_ok() { "fatta" } else { "ERRORE" }, t0.elapsed().as_secs_f64());
+        match result {
             Ok((start_ms, samples)) => {
                 ok += 1;
                 let start = (start_ms * SAMPLE_RATE as f64 / 1000.0).round() as i64;

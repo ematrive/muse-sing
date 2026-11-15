@@ -504,7 +504,13 @@ pub fn sing_start(app: tauri::AppHandle, state: State<SingState>, req: RenderReq
         let emit = |p: sing::Progress| {
             let _ = app.emit("sing-progress", p);
         };
+        let t0 = std::time::Instant::now();
         let res = sing.run(job, &req, &singers, &emit);
+        match &res {
+            Ok(Some((w, secs))) => crate::log!("genera audio: finito, {secs:.1} s di audio in {:.1} s, {} avvisi", t0.elapsed().as_secs_f64(), w.len()),
+            Ok(None) => crate::log!("genera audio: annullato"),
+            Err(e) => crate::log!("genera audio: ERRORE {e}"),
+        }
         let done = match res {
             Ok(Some((warnings, seconds))) => {
                 let chosen: Vec<(String, PartPref)> =

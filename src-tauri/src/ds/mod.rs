@@ -1,6 +1,16 @@
 //! DiffSinger engine: a Rust port of OpenUtau's DiffSinger renderer (OpenUtau.Core/DiffSinger,
 //! MIT, https://github.com/openutau/OpenUtau). See NOTICE.
 
+/// Progress lines on stderr (visible in the terminal of `pnpm tauri dev`), with the time.
+#[macro_export]
+macro_rules! log {
+    ($($arg:tt)*) => {{
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        let s = (t % 86400.0) as u64;
+        eprintln!("[muse-sing {:02}:{:02}:{:02}] {}", s / 3600, s / 60 % 60, s % 60, format!($($arg)*));
+    }};
+}
+
 pub mod config;
 pub mod g2p;
 pub mod onnx;

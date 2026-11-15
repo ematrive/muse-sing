@@ -19,7 +19,7 @@ use crate::singers::SingerInfo;
 use crate::{score, ustx};
 
 /// Changes whenever the engine's output for the same input changes, to invalidate the cache.
-const ENGINE_VERSION: &str = "ds-1";
+const ENGINE_VERSION: &str = "ds-2";
 /// The disk cache is trimmed (oldest files first) above this size.
 const CACHE_MAX_BYTES: u64 = 2 << 30;
 
@@ -159,6 +159,7 @@ impl Sing {
         if req.parts.is_empty() {
             return Err(Error::Other("scegli almeno una voce".into()));
         }
+        crate::log!("genera audio: {} ({} voci, lingua {}, intonazione {})", req.path, req.parts.len(), req.lang.code(), req.pitch);
         let pitch = match req.pitch.as_str() {
             "notes" => PitchSource::Notes,
             _ => PitchSource::Model,
@@ -221,7 +222,9 @@ impl Sing {
             let report = |phrase: usize, phrases: usize, cached: bool| {
                 progress(Progress { job, part: name.clone(), index, parts: n_parts, phrase, phrases, cached });
             };
+            crate::log!("{name}: cantante {} ({}), colore {:?}", singer.name, singer.path, color);
             if let Some(samples) = cache_file.as_deref().and_then(read_cache) {
+                crate::log!("{name}: dalla cache");
                 report(1, 1, true);
                 tracks.push(Track { name: name.clone(), samples: Arc::new(samples) });
                 continue;
@@ -230,7 +233,9 @@ impl Sing {
             let vb = self.voicebank(&dir)?;
             let settings = Settings { pitch, speaker: color.clone(), ..Settings::default() };
             let speaker = vb.speaker_suffix(color.as_deref());
+            let t0 = std::time::Instant::now();
             let ph = ds::phonemize::phonemize(&vb, req.lang, notes, &axis, &speaker).map_err(|e| Error::Other(format!("{name}: {e}")))?;
+            crate::log!("{name}: {} note, {} fonemi in {:.1} s, {} avvisi", notes.len(), ph.phones.len(), t0.elapsed().as_secs_f64(), ph.warnings.len());
             warnings.extend(ph.warnings.iter().map(|w| format!("{name}: {w}")));
             let rendered = ds::render::render_track(&vb, &ph, notes, &axis, &settings, |i, n| {
                 report(i, n, false);

@@ -15,6 +15,7 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 - Con l'italiano Tiger dice anche «gn» e le «i» semiconsonanti.
 
 ### Corretto
+- L'app si chiudeva generando brani senza pause (per esempio «Chi è quel bimbo?»): le voci venivano calcolate in un pezzo unico e la memoria finiva. Ora le frasi più lunghe di circa 10 secondi si dividono tra una parola e l'altra.
 - Sul Mac le parole fuori dal dizionario davano «fonemi non riconosciuti»: le ottimizzazioni di ONNX Runtime rompevano, sui processori Apple, il modello che ne indovina la pronuncia. Ora il modello gira senza ottimizzazioni e, se non funzionasse lo stesso, per l'italiano subentra una regola di conversione.
 - Brani con più strofe: dove una strofa tiene la sillaba su più note, Muse Sing prendeva la sillaba della prima strofa (*u‑na* diventava «ume na», *l'asinello* «lasineltalo»). Ora la nota continua la sillaba della strofa giusta; il testo scritto una volta sola (ritornello) vale ancora per tutte le strofe.
 

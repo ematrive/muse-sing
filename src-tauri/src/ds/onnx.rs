@@ -9,7 +9,8 @@ use ort::value::{DynValue, Tensor};
 
 use crate::error::{Error, Result};
 
-fn env() -> Result<&'static ort::environment::Environment> {
+/// The process-wide ONNX Runtime environment (only one is allowed).
+pub fn env() -> Result<&'static ort::environment::Environment> {
     static ENV: OnceLock<std::result::Result<ort::environment::Environment, String>> = OnceLock::new();
     ENV.get_or_init(|| ort::init().with_name("muse-sing").build().map_err(|e| e.to_string()))
         .as_ref()

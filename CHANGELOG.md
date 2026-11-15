@@ -14,6 +14,10 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 - Il `.ustx` per OpenUtau resta, ora con il cantante scelto per ogni voce.
 - Con l'italiano Tiger dice anche «gn» e le «i» semiconsonanti.
 
+### Corretto
+- Sul Mac le parole italiane fuori dal dizionario davano «fonemi non riconosciuti» (il modello che indovina la pronuncia restituiva solo zeri): ora se il modello non funziona le converte una regola dell'italiano.
+- Brani con più strofe: dove una strofa tiene la sillaba su più note, Muse Sing prendeva la sillaba della prima strofa (*u‑na* diventava «ume na», *l'asinello* «lasineltalo»). Ora la nota continua la sillaba della strofa giusta; il testo scritto una volta sola (ritornello) vale ancora per tutte le strofe.
+
 ## 0.4.0 — 15 novembre 2026
 
 ### Nuovo

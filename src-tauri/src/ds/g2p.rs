@@ -110,6 +110,11 @@ pub struct Pack {
     grapheme_indexes: HashMap<char, i32>,
     phonemes: &'static [&'static str],
     cache: Mutex<HashMap<String, Vec<String>>>,
+    /// Rule-based transcription for words outside the dictionary, used when the model gives
+    /// nothing usable (not in OpenUtau).
+    rules: Option<fn(&str) -> Vec<String>>,
+    /// The model passed its self-test at load time (on some machines it only outputs zeros).
+    model_ok: bool,
 }
 
 fn zip_entry(zip: &[u8], name: &str) -> Result<Vec<u8>> {
@@ -125,7 +130,14 @@ fn remove_tail_digits(s: &str) -> String {
 }
 
 impl Pack {
-    fn load(zip: &[u8], graphemes: &[&str], phonemes: &'static [&'static str], lowercase: bool) -> Result<Pack> {
+    fn load(
+        zip: &[u8],
+        graphemes: &[&str],
+        phonemes: &'static [&'static str],
+        lowercase: bool,
+        rules: Option<fn(&str) -> Vec<String>>,
+        probe: &str,
+    ) -> Result<Pack> {
         let prep_g = |s: &str| if lowercase { s.to_lowercase() } else { s.to_string() };
         let prep_p = |s: &str| remove_tail_digits(&if lowercase { s.to_lowercase() } else { s.to_string() });
         let dict_txt = String::from_utf8_lossy(&zip_entry(zip, "dict.txt")?).into_owned();
@@ -151,13 +163,15 @@ impl Pack {
             .skip(4)
             .filter_map(|(i, g)| g.chars().next().map(|c| (c, i as i32)))
             .collect();
-        Ok(Pack {
-            dict,
-            model,
-            grapheme_indexes,
-            phonemes,
-            cache: Mutex::new(HashMap::new()),
-        })
+        let mut pack = Pack { dict, model, grapheme_indexes, phonemes, cache: Mutex::new(HashMap::new()), rules, model_ok: true };
+        // a word the model must know: if it doesn't come out right, don't trust the model
+        let got = pack.predict(probe).unwrap_or_default();
+        pack.model_ok = !got.is_empty() && got.iter().all(|s| pack.dict.is_valid_symbol(s));
+        Ok(pack)
+    }
+
+    pub fn model_ok(&self) -> bool {
+        self.model_ok
     }
 
     fn predict(&self, grapheme: &str) -> Result<Vec<String>> {
@@ -222,7 +236,9 @@ impl G2p for Pack {
         if let Some(p) = self.cache.lock().ok()?.get(grapheme) {
             return Some(p.clone());
         }
-        let p = self.predict(grapheme).ok()?;
+        let predicted = if self.model_ok { self.predict(grapheme).unwrap_or_default() } else { vec![] };
+        let usable = !predicted.is_empty() && predicted.iter().all(|s| self.dict.is_valid_symbol(s));
+        let p = if usable { predicted } else { self.rules.map(|f| f(grapheme)).unwrap_or_default() };
         if p.is_empty() {
             return None;
         }
@@ -302,12 +318,22 @@ fn cached(cell: &'static OnceLock<std::result::Result<Arc<Pack>, String>>, f: im
 
 pub fn italian() -> Result<Arc<Pack>> {
     static P: OnceLock<std::result::Result<Arc<Pack>, String>> = OnceLock::new();
-    cached(&P, || Pack::load(IT_ZIP, IT_GRAPHEMES, IT_PHONEMES, false))
+    cached(&P, || Pack::load(IT_ZIP, IT_GRAPHEMES, IT_PHONEMES, false, Some(italian_rules), "salutano"))
+}
+
+/// Italian spelling is regular enough for rules (lyrics.rs) to stand in for the model.
+fn italian_rules(word: &str) -> Vec<String> {
+    crate::lyrics::it_g2p_word(&[word.to_string()]).into_iter().map(str::to_string).collect()
+}
+
+/// The Italian model file, for diagnostics.
+pub fn italian_model_bytes() -> Result<Vec<u8>> {
+    zip_entry(IT_ZIP, "g2p.onnx")
 }
 
 pub fn arpabet_plus() -> Result<Arc<Pack>> {
     static P: OnceLock<std::result::Result<Arc<Pack>, String>> = OnceLock::new();
-    cached(&P, || Pack::load(ARPA_PLUS_ZIP, ARPA_PLUS_GRAPHEMES, ARPA_PLUS_PHONEMES, true))
+    cached(&P, || Pack::load(ARPA_PLUS_ZIP, ARPA_PLUS_GRAPHEMES, ARPA_PLUS_PHONEMES, true, None, "singing"))
 }
 
 #[cfg(test)]
@@ -320,8 +346,25 @@ mod tests {
         assert_eq!(p.query("medico").unwrap(), ["m", "EE", "d", "i", "k", "o"]);
         assert!(p.is_vowel("EE") && !p.is_vowel("k"));
         // not in the dictionary: predicted by the ONNX model
+        assert!(p.model_ok());
         let w = p.query("prostrerò").unwrap();
         assert!(w.starts_with(&["p".to_string(), "r".to_string()]), "{w:?}");
+    }
+
+    #[test]
+    fn italian_rules_stand_in_for_the_model() {
+        let r = |w: &str| italian_rules(w).join(" ");
+        assert_eq!(r("salutano"), "s a l u t a n o");
+        assert_eq!(r("bimbo"), "b i m b o");
+        assert_eq!(r("vegliano"), "v e LL a n o");
+        assert_eq!(r("gliangeli"), "LL a n dZZ e l i");
+        assert_eq!(r("scaldano"), "s k a l d a n o");
+        assert_eq!(r("pastorie"), "p a s t o r j e");
+        // a pack whose model failed its self-test answers with the rules
+        let mut p = Pack::load(IT_ZIP, IT_GRAPHEMES, IT_PHONEMES, false, Some(italian_rules), "salutano").unwrap();
+        p.model_ok = false;
+        assert_eq!(p.query("mensi").unwrap().join(" "), "m e n s i");
+        assert_eq!(p.query("medico").unwrap()[1], "EE", "the dictionary still comes first");
     }
 
     #[test]

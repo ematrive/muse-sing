@@ -216,8 +216,12 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
                     }
                 }
                 for n in &m.notes {
-                    // verse = pass through the repeat, else the first verse
-                    let lyric = n.lyrics.get(&(pass as i32 - 1)).or_else(|| n.lyrics.get(&0)).cloned();
+                    // verse = pass through the repeat. A note with only the first verse (a refrain
+                    // written once) sings it on every pass; a note that has other verses but not
+                    // this one holds the previous syllable (melisma), it doesn't borrow verse 1.
+                    let verse = pass as i32 - 1;
+                    let shared = n.lyrics.keys().all(|&k| k == 0);
+                    let lyric = n.lyrics.get(&verse).or_else(|| if shared { n.lyrics.get(&0) } else { None }).cloned();
                     notes.push((Note { start: mstart + n.offset, dur: n.dur, pitch: n.pitch, lyric }, n.tie_prev));
                 }
             }

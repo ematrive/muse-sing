@@ -161,6 +161,12 @@ impl Pack {
     }
 
     fn predict(&self, grapheme: &str) -> Result<Vec<String>> {
+        // indices 0-3 are the model's special tokens (no phoneme): skipped, unlike OpenUtau
+        Ok(self.predict_indices(grapheme)?.iter().filter_map(|&i| self.phonemes.get(i as usize)).filter(|s| !s.is_empty()).map(|s| s.to_string()).collect())
+    }
+
+    /// Raw output of the G2p model: phoneme indices (for diagnostics).
+    pub fn predict_indices(&self, grapheme: &str) -> Result<Vec<i32>> {
         let src: Vec<i32> = grapheme.to_lowercase().chars().filter_map(|c| self.grapheme_indexes.get(&c).copied()).collect();
         if src.is_empty() {
             return Ok(vec![]);
@@ -182,7 +188,12 @@ impl Pack {
                 t += 1;
             }
         }
-        Ok(tgt[1..].iter().filter_map(|&i| self.phonemes.get(i as usize)).map(|s| s.to_string()).collect())
+        Ok(tgt[1..].to_vec())
+    }
+
+    /// The model's phoneme table (index → symbol; 0-3 are special tokens).
+    pub fn phoneme_table(&self) -> &[&str] {
+        self.phonemes
     }
 }
 

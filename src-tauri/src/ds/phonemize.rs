@@ -273,7 +273,8 @@ impl Ctx<'_> {
             let mut symbols: Vec<String> = raw.iter().filter(|s| self.dur.tokens.contains_key(*s)).cloned().collect();
             rejected.extend(raw.iter().filter(|s| !self.dur.tokens.contains_key(*s)).cloned());
             if !rejected.is_empty() {
-                warnings.push(format!("\"{}\": fonemi non riconosciuti {}", head.lyric, rejected.join(" ")));
+                let shown: Vec<String> = rejected.iter().map(|s| if s.is_empty() || s.contains(char::is_whitespace) { format!("{s:?}") } else { s.clone() }).collect();
+                warnings.push(format!("\"{}\": fonemi non riconosciuti {}", head.lyric, shown.join(" ")));
             } else if symbols.is_empty() {
                 warnings.push(format!("\"{}\": parola non riconosciuta", head.lyric));
             }

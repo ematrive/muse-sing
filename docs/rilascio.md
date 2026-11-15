@@ -3,10 +3,10 @@
 1. Aggiorna la versione in `package.json`, `src-tauri/Cargo.toml` e `src-tauri/tauri.conf.json` (stesso numero) e scrivi le novità in `CHANGELOG.md`.
 2. Commit, poi tag e push:
    ```bash
-   git tag v0.5.0
-   git push origin main v0.5.0
+   git tag vX.Y.Z
+   git push origin main vX.Y.Z
    ```
-3. Il workflow **Rilascio** (GitHub Actions) crea il `.dmg` universale (Apple Silicon e Intel) e lo pubblica nella release del tag, insieme all'aggiornamento firmato (`.app.tar.gz`, `.sig`) e a `latest.json`.
+3. Il workflow **Rilascio** (GitHub Actions) crea il `.dmg` per Apple Silicon (ONNX Runtime, il motore del canto, non esiste già pronto per i Mac Intel) e lo pubblica nella release del tag, insieme all'aggiornamento firmato (`.app.tar.gz`, `.sig`) e a `latest.json`.
 4. Le app già installate trovano l'aggiornamento all'avvio (`latest.json` dell'ultima release, escluse le pre-release) e chiedono se installarlo.
 
 ## Firma degli aggiornamenti

@@ -2,7 +2,9 @@
 
 Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'intestazione dell'app, accanto a «Manuale».
 
-## Non ancora rilasciato
+## 0.5.0 — 16 novembre 2026
+
+Da questa versione Muse Sing funziona solo sui Mac con processore Apple (M1 o successivi): il motore che fa cantare non esiste per i Mac Intel, che restano alla 0.4.0.
 
 ### Nuovo
 - **Muse Sing canta da solo, senza OpenUtau.** La scheda si chiama ora «Canta una partitura»:

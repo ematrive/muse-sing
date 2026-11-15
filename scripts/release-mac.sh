@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds Muse Sing for macOS: universal .app + .dmg (Apple Silicon and Intel), into release/.
+# Builds Muse Sing for macOS: .app + .dmg for Apple Silicon (ONNX Runtime has no Intel build), into release/.
 # Signed with a Developer ID when APPLE_SIGNING_IDENTITY is set (see connector's
 # docs/tecnico/rilascio-macos.md), otherwise ad-hoc: the first launch then needs
 #   xattr -cr "/Applications/Muse Sing.app"
@@ -25,10 +25,10 @@ if [[ -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
   red "! nessun certificato Developer ID: firma ad-hoc (al primo avvio: xattr -cr \"/Applications/Muse Sing.app\")"
 fi
 
-step "Build universale (Apple Silicon + Intel)"
-pnpm tauri build --target universal-apple-darwin
+step "Build Apple Silicon"
+pnpm tauri build --target aarch64-apple-darwin
 
-BUNDLE=src-tauri/target/universal-apple-darwin/release/bundle
+BUNDLE=src-tauri/target/aarch64-apple-darwin/release/bundle
 APP="$BUNDLE/macos/Muse Sing.app"
 DMG=$(ls -t "$BUNDLE"/dmg/*.dmg | head -1)
 [[ -d "$APP" && -f "$DMG" ]] || fail "pacchetto non trovato in $BUNDLE"
@@ -36,7 +36,7 @@ DMG=$(ls -t "$BUNDLE"/dmg/*.dmg | head -1)
 step "Verifiche"
 EXE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist")
 ARCHS=$(lipo -archs "$APP/Contents/MacOS/$EXE")
-[[ "$ARCHS" == *arm64* && "$ARCHS" == *x86_64* ]] || fail "l'eseguibile non è universale ($ARCHS)"
+[[ "$ARCHS" == *arm64* ]] || fail "l'eseguibile non è per Apple Silicon ($ARCHS)"
 echo "architetture: $ARCHS"
 codesign --verify --deep --strict "$APP" && echo "firma valida"
 hdiutil verify "$DMG" >/dev/null && echo "dmg integro"

@@ -1,4 +1,4 @@
-# macOS installer (universal: Apple Silicon + Intel), published as a GitHub release when a tag
+# macOS installer (Apple Silicon only: ONNX Runtime has no prebuilt x86_64-apple-darwin), published as a GitHub release when a tag
 # vX.Y.Z is pushed (see docs/rilascio.md). Ad-hoc signed (bundle.macOS.signingIdentity "-"),
 # no Apple certificate. The app checks this release at startup (latest.json) to update itself.
 name: Rilascio
@@ -23,7 +23,7 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -40,9 +40,9 @@ jobs:
           releaseBody: "Novità: vedi [CHANGELOG.md](https://github.com/ematrive/muse-sing/blob/main/CHANGELOG.md). Su Mac la prima volta: `xattr -cr \"/Applications/Muse Sing.app\"` (l'app non è firmata da Apple)."
           releaseDraft: false
           prerelease: false
-          args: --target universal-apple-darwin
+          args: --target aarch64-apple-darwin
       - name: Verifica firma ad-hoc
         run: |
-          app="src-tauri/target/universal-apple-darwin/release/bundle/macos/Muse Sing.app"
+          app="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Muse Sing.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -dv "$app" 2>&1 | grep -q "Signature=adhoc"

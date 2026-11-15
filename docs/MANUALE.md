@@ -44,6 +44,8 @@ Muse Sing legge i cantanti dalla cartella di OpenUtau. Un cantante che vuoi usar
 
 ### 3. Muse Sing
 
+Serve un Mac con processore Apple (M1 o successivi): sui Mac Intel funziona solo fino alla versione 0.4.0.
+
 1. Apri il `.dmg` e trascina **Muse Sing** in Applicazioni.
 2. Al primo avvio, se macOS dice che l'app è danneggiata, sbloccala una volta:
 

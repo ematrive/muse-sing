@@ -61,9 +61,18 @@ pub fn floats(v: &DynValue) -> Result<(Vec<i64>, Vec<f32>)> {
     Ok((shape.to_vec(), data.to_vec()))
 }
 
+/// A session builder that runs on the CPU only. ort's default device policy registers CoreML on
+/// macOS, which crashed in the vocoder (EXC_BAD_ACCESS in BNNS) and made the G2p output zeros.
+pub fn builder() -> Result<ort::session::builder::SessionBuilder> {
+    Session::builder(env()?)
+        .map_err(ort_err("ONNX session"))?
+        .with_auto_device(ort::session::builder::AutoDevicePolicy::PreferCPU)
+        .map_err(|e| Error::Other(format!("ONNX session: {e}")))
+}
+
 impl Model {
     pub fn load(path: &Path) -> Result<Model> {
-        let mut builder = Session::builder(env()?).map_err(ort_err("ONNX session"))?;
+        let mut builder = builder()?;
         let session = builder
             .commit_from_file(path)
             .map_err(|e| Error::Other(format!("{}: {e}", path.display())))?;
@@ -75,10 +84,10 @@ impl Model {
         Self::load_bytes_with(name, bytes, true)
     }
 
-    /// `optimize = false` turns ONNX Runtime's graph optimisations off: with them the G2p models
-    /// output only zeros on macOS arm64 (even at Level1).
+    /// `optimize = false` turns ONNX Runtime's graph optimisations off (the G2p models, which gave
+    /// zeros on macOS arm64 with them while CoreML was on; kept off, they are tiny).
     pub fn load_bytes_with(name: &str, bytes: &[u8], optimize: bool) -> Result<Model> {
-        let mut builder = Session::builder(env()?).map_err(ort_err("ONNX session"))?;
+        let mut builder = builder()?;
         if !optimize {
             builder = builder
                 .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Disable)

@@ -38,15 +38,16 @@ fn main() {
     let bytes = g2p::italian_model_bytes().expect("model");
     let env = muse_sing_lib::ds::onnx::env().expect("ort");
     let table = p.phoneme_table();
-    let configs: [(&str, GraphOptimizationLevel, usize); 5] = [
-        ("predefinito (Level3)", GraphOptimizationLevel::Level3, 0),
-        ("Level2", GraphOptimizationLevel::Level2, 0),
-        ("Level1", GraphOptimizationLevel::Level1, 0),
-        ("senza ottimizzazioni", GraphOptimizationLevel::Disable, 0),
-        ("senza ottimizzazioni, 1 thread", GraphOptimizationLevel::Disable, 1),
+    // (name, optimisation level, threads, CPU only)
+    let configs: [(&str, GraphOptimizationLevel, usize, bool); 4] = [
+        ("solo CPU, ottimizzato (come l'app)", GraphOptimizationLevel::Level3, 0, true),
+        ("solo CPU, senza ottimizzazioni", GraphOptimizationLevel::Disable, 0, true),
+        ("dispositivo automatico (CoreML sul Mac), ottimizzato", GraphOptimizationLevel::Level3, 0, false),
+        ("dispositivo automatico, senza ottimizzazioni", GraphOptimizationLevel::Disable, 0, false),
     ];
-    for (name, level, threads) in configs {
-        let mut b = Session::builder(env).expect("builder").with_optimization_level(level).expect("level");
+    for (name, level, threads, cpu) in configs {
+        let base = if cpu { muse_sing_lib::ds::onnx::builder().expect("builder") } else { Session::builder(env).expect("builder") };
+        let mut b = base.with_optimization_level(level).expect("level");
         if threads > 0 {
             b = b.with_intra_threads(threads).expect("threads");
         }

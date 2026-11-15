@@ -13,7 +13,7 @@ fn main() -> ort::Result<()> {
     files.sort();
     for f in files {
         println!("== {}", f.display());
-        let s = ort::session::Session::builder(&env)?.commit_from_file(&f)?;
+        let s = ort::session::Session::builder(&env)?.with_auto_device(ort::session::builder::AutoDevicePolicy::PreferCPU)?.commit_from_file(&f)?;
         for i in s.inputs() { println!("  in  {} {:?}", i.name(), i.dtype()); }
         for o in s.outputs() { println!("  out {} {:?}", o.name(), o.dtype()); }
     }

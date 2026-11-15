@@ -72,7 +72,18 @@ impl Model {
     }
 
     pub fn load_bytes(name: &str, bytes: &[u8]) -> Result<Model> {
+        Self::load_bytes_with(name, bytes, true)
+    }
+
+    /// `optimize = false` turns ONNX Runtime's graph optimisations off: with them the G2p models
+    /// output only zeros on macOS arm64 (even at Level1).
+    pub fn load_bytes_with(name: &str, bytes: &[u8], optimize: bool) -> Result<Model> {
         let mut builder = Session::builder(env()?).map_err(ort_err("ONNX session"))?;
+        if !optimize {
+            builder = builder
+                .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Disable)
+                .map_err(|e| Error::Other(format!("ONNX session: {e}")))?;
+        }
         let session = builder.commit_from_memory(bytes).map_err(|e| Error::Other(format!("{name}: {e}")))?;
         Ok(Self::new(name.to_string(), session))
     }

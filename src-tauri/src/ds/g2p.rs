@@ -156,7 +156,7 @@ impl Pack {
                 dict.add_entry(&prep_g(parts[0]), parts[1].split_whitespace().map(prep_p));
             }
         }
-        let model = Model::load_bytes("g2p.onnx", &model_bytes)?;
+        let model = Model::load_bytes_with("g2p.onnx", &model_bytes, false)?;
         let grapheme_indexes = graphemes
             .iter()
             .enumerate()

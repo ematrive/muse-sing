@@ -2,6 +2,18 @@
 
 Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'intestazione dell'app, accanto a «Manuale».
 
+## Non ancora rilasciato
+
+### Nuovo
+- **Muse Sing canta da solo, senza OpenUtau.** La scheda si chiama ora «Canta una partitura»:
+  - un cantante (e un colore di voce) per ogni voce, ricordato da un brano all'altro;
+  - **Genera audio** con avanzamento voce per voce, annullabile; le voci già generate si riusano;
+  - intonazione **naturale** (decide il cantante) o **esatta** (ferma sulle note);
+  - **ascolto** con barra di posizione e **mix** per voce (volume, pan, muta) che si sente subito;
+  - **export** in MP3, FLAC o WAV.
+- Il `.ustx` per OpenUtau resta, ora con il cantante scelto per ogni voce.
+- Con l'italiano Tiger dice anche «gn» e le «i» semiconsonanti.
+
 ## 0.4.0 — 15 novembre 2026
 
 ### Nuovo

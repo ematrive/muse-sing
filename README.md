@@ -1,6 +1,6 @@
 # Muse Sing
 
-App per macOS (Tauri 2 + React) che trasforma una partitura **MuseScore 4** (`.mscz`) in un progetto **OpenUtau** (`.ustx`). In OpenUtau le voci cantano davvero le parole scritte sotto le note, con un voicebank DiffSinger.
+App per macOS (Tauri 2 + React) che fa cantare una partitura **MuseScore 4** (`.mscz`): le voci cantano davvero le parole scritte sotto le note, con un voicebank DiffSinger. L'audio si genera nell'app (motore DiffSinger in Rust, derivato da OpenUtau) e si esporta in MP3, FLAC o WAV; in alternativa l'app crea un progetto **OpenUtau** (`.ustx`).
 
 Documentazione per chi usa l'app: [docs/MANUALE.md](docs/MANUALE.md), che si legge anche dentro l'app nella scheda «Manuale». Le novità di ogni versione sono in [CHANGELOG.md](CHANGELOG.md).
 
@@ -20,7 +20,8 @@ Documentazione per chi usa l'app: [docs/MANUALE.md](docs/MANUALE.md), che si leg
   - testo nella seconda voce del rigo;
   - cambi di metro;
   - battute "simile".
-- Trova i cantanti installati in OpenUtau (`~/Library/OpenUtau/Singers`) e ricorda la scelta per ogni lingua.
+- Trova i cantanti installati in OpenUtau (`~/Library/OpenUtau/Singers`) e nella cartella propria di Muse Sing, e ricorda il cantante di ogni voce.
+- **Genera l'audio** con un cantante per voce, su CPU, con cache per voce; mix con volume/pan/muta ed export MP3/FLAC/WAV.
 
 ## Registra un cantante
 
@@ -53,8 +54,7 @@ Il primo avvio chiede il permesso per il microfono (`Info.plist` + `Entitlements
 
 | Lingua | Voicebank | Download |
 |---|---|---|
-| Italiano | Gahata Meiji v160 (LUNAI Project) | https://github.com/lunaiproject/lunai_singers/releases/download/Gahata_Meiji_v160/Gahata_Meiji_v160.zip |
-| Inglese | TIGER DS v106 (tigermeat) | https://github.com/spicytigermeat/tiger_diffsinger/releases/download/v106/TIGER_DS_v106_PACK.zip (lo zip dentro `Voice Library/`) |
+| Italiano e inglese | TIGER DS v106 (tigermeat) | https://github.com/spicytigermeat/tiger_diffsinger/releases/download/v106/TIGER_DS_v106_PACK.zip (lo zip dentro `Voice Library/`) |
 
 Installazione manuale, la più affidabile:
 
@@ -102,10 +102,13 @@ cd src-tauri && cargo test   # test del motore (su Linux serve libasound2-dev pe
 - `src-tauri/src/corpus.rs`: frasi da registrare (esercizi, vocalizzi, brani) e controllo della copertura di fonemi e note.
 - `src-tauri/src/audio.rs`: guida sintetizzata, registrazione dal microfono (cpal), WAV (hound).
 - `src-tauri/src/voice.rs`: cartella del cantante (profilo, frasi, registrazioni).
-- `src-tauri/src/singers.rs`: cantanti installati in OpenUtau (l'id è la cartella di `character.txt`, relativa a `Singers`).
+- `src-tauri/src/singers.rs`: cantanti installati in OpenUtau (l'id è la cartella di `character.txt`, relativa a `Singers`) e nella cartella di Muse Sing (prefisso `musesing:`), con la compatibilità con il motore.
+- `src-tauri/src/ds/`: motore DiffSinger, port in Rust del codice di OpenUtau (`OpenUtau.Core/DiffSinger`, MIT) con ONNX Runtime (`ort`, linkato staticamente): G2P (`g2p.rs`, modelli italiano e ARPAbet+ di OpenUtau in `resources/g2p/`), fonemizzazione e durate (`phonemize.rs`), pitch, modello acustico e vocoder (`render.rs`).
+- `src-tauri/src/sing.rs`: render di tutte le voci in un thread, con annullamento e cache su disco per voce; `mix.rs`: mix stereo ed export (hound, flacenc, LAME).
+- `src-tauri/examples/ds_render.rs`: render da riga di comando (`cargo run --release --example ds_render -- <brano.mscz> <voicebank> <out.wav>`); `tests/sing.rs` fa un render completo se `MUSESING_TEST_VOICEBANK` punta a un voicebank.
 - `src-tauri/tests/fixtures.rs`: confronta i progetti con quelli dello script Python di riferimento (`../tools/mscz_to_ustx.py`) sui quattro brani di prova. Le partiture del coro non sono nel repository: senza `src-tauri/tests/fixtures/` questi test vengono saltati.
 - `preview.html`: interfaccia nel browser con il backend simulato, solo per lo sviluppo (`pnpm dev`, poi `/preview.html?auto=1`). La scheda di conversione usa le analisi dei brani (`src/preview-santo.json`, `src/preview-sonnet.json`), anch'esse solo in locale.
 
 ## Licenza
 
-Codice: [MIT](LICENSE), © 2026 Emanuele Trivella. La licenza non riguarda i voicebank e il vocoder (con licenze proprie, non commerciali) né le voci registrate, che restano di chi le ha registrate.
+Codice: [MIT](LICENSE), © 2026 Emanuele Trivella. Il motore DiffSinger deriva da OpenUtau (MIT) e l'export MP3 usa LAME (LGPL): vedi [NOTICE](NOTICE). La licenza non riguarda i voicebank e il vocoder (con licenze proprie, non commerciali) né le voci registrate, che restano di chi le ha registrate.

@@ -33,7 +33,7 @@ export default function App() {
       <header className="flex items-center gap-2 border-b border-zinc-200 px-5 py-2.5 dark:border-zinc-800">
         <Mic2 className="h-5 w-5 text-violet-600" />
         <h1 className="mr-4 text-base font-semibold">Muse Sing</h1>
-        {tabBtn("convert", "Da MuseScore a OpenUtau", Mic2)}
+        {tabBtn("convert", "Canta una partitura", Mic2)}
         {tabBtn("record", "Registra un cantante", AudioLines)}
         <div className="ml-auto flex items-center gap-2">
           {updating && <span className="text-xs text-violet-600 dark:text-violet-400">{updating}</span>}

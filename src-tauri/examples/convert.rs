@@ -19,7 +19,7 @@ fn main() {
         }
     }
     let stem = src.file_stem().unwrap().to_string_lossy().to_string();
-    let p = ustx::build(&s, &ustx::Options { lang, singer: &a[3], parts: None, hints: &hints, fallback_name: &stem });
+    let p = ustx::build(&s, &ustx::Options { lang, singer: &a[3], part_singers: None, parts: None, hints: &hints, fallback_name: &stem });
     std::fs::write(&a[2], ustx::to_yaml(&p)).unwrap();
     let notes: usize = p.voice_parts.iter().map(|v| v.notes.len()).sum();
     println!("{}: {:?}, {} tracce, {} note, avvisi {:?}", a[2], lang, p.tracks.len(), notes, s.warnings);

@@ -116,6 +116,8 @@ fn ticks(b: Beats) -> i64 {
 pub struct Options<'a> {
     pub lang: Lang,
     pub singer: &'a str,
+    /// Singer per part name, overriding `singer`.
+    pub part_singers: Option<&'a HashMap<String, String>>,
     /// Part names to include (None = every part with lyrics).
     pub parts: Option<&'a [String]>,
     pub hints: &'a HashMap<String, String>,
@@ -166,7 +168,7 @@ pub fn build(score: &Score, opt: &Options) -> Project {
         }
         let end = notes.iter().map(|n| n.position + n.duration).max().unwrap_or(0);
         tracks.push(Track {
-            singer: opt.singer.to_string(),
+            singer: opt.part_singers.and_then(|m| m.get(&part.name)).map(String::as_str).unwrap_or(opt.singer).to_string(),
             phonemizer: opt.lang.phonemizer().to_string(),
             renderer_settings: RendererSettings { renderer: "DIFFSINGER".into() },
             track_name: part.name.clone(),

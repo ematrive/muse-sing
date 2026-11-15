@@ -52,6 +52,59 @@ function run(kind: "guide" | "take" | "play", id: string, from: number, speed = 
   return me;
 }
 
+// --- a fake render / playback of the sung mix ---------------------------------------------------
+const sing = (() => {
+  let job = 100;
+  let renderTimer: number | undefined;
+  let playTimer: number | undefined;
+  const total = 154;
+  return {
+    start(req: { parts: { name: string }[] }) {
+      const me = ++job;
+      let i = 0;
+      const per = 6;
+      clearInterval(renderTimer);
+      renderTimer = window.setInterval(() => {
+        const index = Math.floor(i / per);
+        if (index >= req.parts.length) {
+          clearInterval(renderTimer);
+          emit("sing-done", { job: me, error: null, cancelled: false, warnings: ["Basso: «signore»: fonemi non riconosciuti JJ"], seconds: total });
+          return;
+        }
+        emit("sing-progress", { job: me, part: req.parts[index].name, index, parts: req.parts.length, phrase: i % per, phrases: per, cached: false });
+        i++;
+      }, 250);
+      return me;
+    },
+    cancel() {
+      const me = job;
+      setTimeout(() => {
+        clearInterval(renderTimer);
+        emit("sing-done", { job: me, error: null, cancelled: true, warnings: [], seconds: 0 });
+      }, 800);
+    },
+    play(from: number) {
+      const me = ++job;
+      clearInterval(playTimer);
+      const t0 = performance.now();
+      playTimer = window.setInterval(() => {
+        const t = from + (performance.now() - t0) / 1000;
+        if (t >= total) {
+          clearInterval(playTimer);
+          emit("sing-play-done", { job: me, error: null });
+          return;
+        }
+        emit("sing-play", { job: me, t, total });
+      }, 50);
+      return me;
+    },
+    stop() {
+      clearInterval(playTimer);
+      emit("sing-play-done", { job, error: null });
+    },
+  };
+})();
+
 setInterval(() => emit("audio-level", 0.05 + Math.random() * 0.25), 50);
 // for UI checks: inject events and look at the commands sent
 const w = window as unknown as { __emit: typeof emit; __calls: [string, unknown][] };
@@ -70,12 +123,29 @@ mockIPC(
     if (cmd === "list_singers")
       return {
         singers: [
-          { id: "Gahata_Meiji_v160/configs/configs", name: "Gahata Meiji v160", singer_type: "diffsinger", langs: ["de", "en", "es", "it", "ja"] },
-          { id: "TIGER_DS_v106", name: "TIGER DS v106", singer_type: "diffsinger", langs: ["en", "es", "fr", "it", "ja"] },
+          {
+            id: "TIGER_DS_v106",
+            name: "TIGER DS v106",
+            singer_type: "diffsinger",
+            langs: ["en", "es", "fr", "it", "ja"],
+            path: "/Users/utente/Library/OpenUtau/Singers/TIGER_DS_v106",
+            openutau: true,
+            engine: true,
+            engine_note: null,
+            colors: ["fresh", "soft", "power", "falsetto"],
+          },
         ],
         folders: ["/Users/utente/Library/OpenUtau/Singers"],
-        selected: { it: "Gahata_Meiji_v160/configs/configs", en: "TIGER_DS_v106" },
+        own_folder: "/Users/utente/Library/Application Support/app.musesing.desktop/Singers",
+        selected: { it: "TIGER_DS_v106", en: "TIGER_DS_v106" },
+        parts: {},
       };
+    if (cmd.startsWith("sing_")) w.__calls.push([cmd, args]);
+    if (cmd === "sing_start") return sing.start(a.req as unknown as { parts: { name: string }[] });
+    if (cmd === "sing_cancel") return sing.cancel();
+    if (cmd === "sing_play") return sing.play(a.fromSec);
+    if (cmd === "sing_stop") return sing.stop();
+    if (cmd === "sing_export") return a.path;
     if (cmd === "generate") return { output: "/Users/utente/Music/Santo.ustx", tracks: 3, notes: 275 };
     if (cmd === "plugin:dialog|open") return "/Users/utente/Music/Santo.mscz";
     if (cmd === "plugin:dialog|save") return "/Users/utente/Music/Santo.ustx";

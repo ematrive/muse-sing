@@ -108,14 +108,27 @@ pub fn analyze(path: String) -> Result<Analysis> {
 pub struct SingersList {
     pub singers: Vec<SingerInfo>,
     pub folders: Vec<String>,
+    /// Muse Sing's own Singers folder (voicebanks that only Muse Sing uses).
+    pub own_folder: Option<String>,
     /// Suggested singer id per language (saved choice, else a sensible default).
     pub selected: HashMap<String, String>,
+    /// Saved choice per part name (lowercase), across pieces.
+    pub parts: HashMap<String, PartPref>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct PartPref {
+    pub singer: String,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
 struct Prefs {
     #[serde(default)]
     singer: HashMap<String, String>,
+    #[serde(default)]
+    parts: HashMap<String, PartPref>,
     #[serde(default)]
     recent_voices: Vec<RecentVoice>,
 }
@@ -154,22 +167,53 @@ fn save_prefs(app: &tauri::AppHandle, prefs: &Prefs) {
     }
 }
 
+/// `<app data>/Singers`, created on first use.
+fn own_singers_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let d = app.path().app_data_dir().ok()?.join("Singers");
+    std::fs::create_dir_all(&d).ok()?;
+    Some(d)
+}
+
+fn all_singers(app: &tauri::AppHandle) -> Vec<SingerInfo> {
+    singers::list_singers(own_singers_dir(app).as_deref())
+}
+
 #[tauri::command]
-pub fn list_singers(app: tauri::AppHandle) -> SingersList {
-    let singers = singers::list_singers();
-    let prefs = load_prefs(&app);
-    let mut selected = HashMap::new();
-    for lang in ["it", "en"] {
-        let saved = prefs.singer.get(lang).filter(|id| singers.iter().any(|s| &s.id == *id)).cloned();
-        if let Some(id) = saved.or_else(|| singers::suggest(&singers, lang)) {
-            selected.insert(lang.to_string(), id);
+pub async fn list_singers(app: tauri::AppHandle) -> Result<SingersList> {
+    // reading the voicebanks' configuration takes a moment: off the main thread
+    tauri::async_runtime::spawn_blocking(move || {
+        let singers = all_singers(&app);
+        let prefs = load_prefs(&app);
+        let mut selected = HashMap::new();
+        for lang in ["it", "en"] {
+            let saved = prefs.singer.get(lang).filter(|id| singers.iter().any(|s| &s.id == *id)).cloned();
+            if let Some(id) = saved.or_else(|| singers::suggest(&singers, lang, true)).or_else(|| singers::suggest(&singers, lang, false)) {
+                selected.insert(lang.to_string(), id);
+            }
         }
+        let parts = prefs.parts.into_iter().filter(|(_, p)| singers.iter().any(|s| s.id == p.singer)).collect();
+        SingersList {
+            folders: singers::singer_roots().iter().map(|p| p.to_string_lossy().to_string()).collect(),
+            own_folder: own_singers_dir(&app).map(|p| p.to_string_lossy().to_string()),
+            singers,
+            selected,
+            parts,
+        }
+    })
+    .await
+    .map_err(|e| Error::Other(format!("cantanti: {e}")))
+}
+
+/// Remembers the singer of each part (by name) and the language's default singer.
+fn remember_singers(app: &tauri::AppHandle, lang: Lang, parts: &[(String, PartPref)]) {
+    let mut prefs = load_prefs(app);
+    if let Some((_, first)) = parts.first() {
+        prefs.singer.insert(lang.code().to_string(), first.singer.clone());
     }
-    SingersList {
-        folders: singers::singer_roots().iter().map(|p| p.to_string_lossy().to_string()).collect(),
-        singers,
-        selected,
+    for (name, p) in parts {
+        prefs.parts.insert(name.to_lowercase(), p.clone());
     }
+    save_prefs(app, &prefs);
 }
 
 #[derive(Deserialize)]
@@ -179,6 +223,9 @@ pub struct GenerateRequest {
     pub lang: Lang,
     pub singer: String,
     pub parts: Vec<String>,
+    /// Singer id per part, overriding `singer`.
+    #[serde(default)]
+    pub part_singers: HashMap<String, String>,
 }
 
 #[derive(Serialize)]
@@ -192,25 +239,43 @@ pub struct GenerateResult {
 pub fn generate(app: tauri::AppHandle, req: GenerateRequest) -> Result<GenerateResult> {
     let src = PathBuf::from(&req.path);
     let score = read_mscz(&src)?;
-    if req.singer.trim().is_empty() {
+    if req.singer.trim().is_empty() && req.part_singers.is_empty() {
         return Err(Error::Other("scegli il cantante".into()));
     }
     if req.parts.is_empty() {
         return Err(Error::Other("scegli almeno una voce".into()));
     }
+    let own: Vec<&String> = req.part_singers.values().chain([&req.singer]).filter(|s| s.starts_with(singers::OWN_PREFIX)).collect();
+    if let Some(s) = own.first() {
+        return Err(Error::Other(format!(
+            "«{}» è nella cartella cantanti di Muse Sing, OpenUtau non lo vede: per il .ustx scegli un cantante installato in OpenUtau",
+            s.trim_start_matches(singers::OWN_PREFIX)
+        )));
+    }
     let hints = HashMap::new();
     let project = ustx::build(
         &score,
-        &ustx::Options { lang: req.lang, singer: &req.singer, parts: Some(&req.parts), hints: &hints, fallback_name: &stem(&src) },
+        &ustx::Options {
+            lang: req.lang,
+            singer: &req.singer,
+            part_singers: Some(&req.part_singers),
+            parts: Some(&req.parts),
+            hints: &hints,
+            fallback_name: &stem(&src),
+        },
     );
     let mut out = PathBuf::from(&req.output);
     if out.extension().is_none() {
         out.set_extension("ustx");
     }
     std::fs::write(&out, ustx::to_yaml(&project))?;
-    let mut prefs = load_prefs(&app);
-    prefs.singer.insert(req.lang.code().to_string(), req.singer.clone());
-    save_prefs(&app, &prefs);
+    let chosen: Vec<(String, PartPref)> = req
+        .parts
+        .iter()
+        .map(|p| (p.clone(), PartPref { singer: req.part_singers.get(p).unwrap_or(&req.singer).clone(), color: None }))
+        .filter(|(_, p)| !p.singer.is_empty())
+        .collect();
+    remember_singers(&app, req.lang, &chosen);
     Ok(GenerateResult {
         output: out.to_string_lossy().to_string(),
         tracks: project.tracks.len(),
@@ -221,7 +286,7 @@ pub fn generate(app: tauri::AppHandle, req: GenerateRequest) -> Result<GenerateR
 // ---------------------------------------------------------------------------------------------
 // Recording a voicebank
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, State};
 
 use crate::audio::{self, Engine};
@@ -413,6 +478,117 @@ pub async fn audio_note(state: State<'_, AudioState>, pitch: i32, seconds: f64) 
 #[tauri::command]
 pub fn audio_stop(state: State<AudioState>) {
     state.0.stop();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sung audio (Muse Sing's DiffSinger engine)
+
+use crate::mix::{self, MixPart};
+use crate::sing::{self, RenderRequest, Sing};
+
+pub struct SingState(pub Arc<Sing>, pub Mutex<u64>);
+
+impl SingState {
+    pub fn new(app: &tauri::AppHandle) -> Self {
+        SingState(Arc::new(Sing::new(app.path().app_cache_dir().ok())), Mutex::new(0))
+    }
+}
+
+/// Starts rendering the parts; returns the job id carried by `sing-progress` / `sing-done`.
+#[tauri::command]
+pub fn sing_start(app: tauri::AppHandle, state: State<SingState>, req: RenderRequest) -> Result<u64> {
+    let sing = state.0.clone();
+    let job = sing.begin();
+    std::thread::spawn(move || {
+        let singers = all_singers(&app);
+        let emit = |p: sing::Progress| {
+            let _ = app.emit("sing-progress", p);
+        };
+        let res = sing.run(job, &req, &singers, &emit);
+        let done = match res {
+            Ok(Some((warnings, seconds))) => {
+                let chosen: Vec<(String, PartPref)> =
+                    req.parts.iter().map(|p| (p.name.clone(), PartPref { singer: p.singer.clone(), color: p.color.clone() })).collect();
+                remember_singers(&app, req.lang, &chosen);
+                sing::Done { job, error: None, cancelled: false, warnings, seconds }
+            }
+            Ok(None) => sing::Done { job, error: None, cancelled: true, warnings: vec![], seconds: 0.0 },
+            Err(e) => sing::Done { job, error: Some(e.to_string()), cancelled: false, warnings: vec![], seconds: 0.0 },
+        };
+        let _ = app.emit("sing-done", done);
+    });
+    Ok(job)
+}
+
+#[tauri::command]
+pub fn sing_cancel(state: State<SingState>) {
+    state.0.cancel();
+}
+
+#[derive(Serialize, Clone)]
+pub struct PlayProgress {
+    pub job: u64,
+    pub t: f64,
+    pub total: f64,
+}
+
+#[derive(Serialize, Clone)]
+pub struct PlayDone {
+    pub job: u64,
+    pub error: Option<String>,
+}
+
+/// Plays the mix of the rendered parts from `from_sec` (`sing-play` / `sing-play-done` events).
+#[tauri::command]
+pub async fn sing_play(
+    app: tauri::AppHandle,
+    audio: State<'_, AudioState>,
+    state: State<'_, SingState>,
+    mix: Vec<MixPart>,
+    from_sec: f64,
+) -> Result<u64> {
+    let (sing, engine) = (state.0.clone(), audio.0.clone());
+    let (l, r) = sing.with_tracks(|t| mix::mix(t, &mix))?;
+    let job = blocking({
+        let engine = engine.clone();
+        move || {
+            engine.ensure(false)?;
+            Ok(engine.begin_job(false))
+        }
+    })
+    .await?;
+    *state.1.lock().unwrap_or_else(|e| e.into_inner()) = job;
+    std::thread::spawn(move || {
+        let progress = |t: f64, total: f64| {
+            let _ = app.emit("sing-play", PlayProgress { job, t, total });
+        };
+        let res = engine.play_stereo(job, &l, &r, crate::ds::render::SAMPLE_RATE, from_sec, &progress);
+        engine.end_job(job);
+        let _ = app.emit("sing-play-done", PlayDone { job, error: res.err().map(|e| e.to_string()) });
+    });
+    Ok(job)
+}
+
+/// Stops the mix playback (not a recording started meanwhile).
+#[tauri::command]
+pub fn sing_stop(audio: State<AudioState>, state: State<SingState>) {
+    let job = *state.1.lock().unwrap_or_else(|e| e.into_inner());
+    if audio.0.is_current(job) {
+        audio.0.stop();
+    }
+}
+
+/// Exports the mix; the format follows the extension (.mp3, .flac, .wav).
+#[tauri::command]
+pub async fn sing_export(state: State<'_, SingState>, mix: Vec<MixPart>, path: String) -> Result<String> {
+    let sing = state.0.clone();
+    blocking(move || {
+        let (l, r) = sing.with_tracks(|t| mix::mix(t, &mix))?;
+        let title = sing.title();
+        mix::export(Path::new(&path), &l, &r, crate::ds::render::SAMPLE_RATE, &title)?;
+        Ok(path)
+    })
+    .await
 }
 
 #[cfg(test)]

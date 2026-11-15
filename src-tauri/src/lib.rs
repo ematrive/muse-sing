@@ -1,9 +1,12 @@
 pub mod audio;
 pub mod commands;
 pub mod corpus;
+pub mod ds;
 pub mod error;
 pub mod lyrics;
+pub mod mix;
 pub mod score;
+pub mod sing;
 pub mod singers;
 pub mod ustx;
 pub mod voice;
@@ -18,6 +21,7 @@ pub fn run() {
         .setup(|app| {
             use tauri::Manager;
             app.manage(commands::AudioState::new(app.handle().clone()));
+            app.manage(commands::SingState::new(app.handle()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -37,6 +41,11 @@ pub fn run() {
             commands::audio_open,
             commands::audio_close,
             commands::audio_note,
+            commands::sing_start,
+            commands::sing_cancel,
+            commands::sing_play,
+            commands::sing_stop,
+            commands::sing_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

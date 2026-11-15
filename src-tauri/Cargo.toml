@@ -28,3 +28,12 @@ num-rational = "0.4"
 thiserror = "2"
 cpal = "0.18.2"
 hound = "3.5.1"
+ort = "=2.0.0-rc.15"
+mp3lame-encoder = "0.3.0"
+flacenc = "0.5.1"
+
+# the encoders are slow unoptimised: keep `tauri dev` exports quick
+[profile.dev.package.flacenc]
+opt-level = 3
+[profile.dev.package.mp3lame-sys]
+opt-level = 3

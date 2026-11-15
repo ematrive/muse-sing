@@ -333,6 +333,8 @@ pub struct Progress {
 struct Voice {
     id: u64,
     buf: Arc<Vec<f32>>,
+    /// Right channel of a stereo sound (`buf` is then the left one).
+    right: Option<Arc<Vec<f32>>>,
     /// Absolute output frame of `buf[offset]`.
     start: u64,
     offset: usize,
@@ -358,7 +360,8 @@ struct Mixer {
 }
 
 impl Mixer {
-    fn render(&mut self, n: usize, mut out: impl FnMut(usize, f32), in_now: u64, in_ratio: f64) {
+    /// Calls `out(frame, left, right)` for `n` frames.
+    fn render(&mut self, n: usize, mut out: impl FnMut(usize, f32, f32), in_now: u64, in_ratio: f64) {
         let f0 = self.frame;
         for v in &self.voices {
             if v.start >= f0 && v.start < f0 + n as u64 && !self.marks.iter().any(|(id, _)| *id == v.id) {
@@ -367,7 +370,7 @@ impl Mixer {
         }
         for i in 0..n {
             let f = f0 + i as u64;
-            let mut s = 0f32;
+            let (mut s, mut r) = (0f32, 0f32);
             for v in &self.voices {
                 if f < v.start {
                     continue;
@@ -380,10 +383,12 @@ impl Mixer {
                 }
                 if let Some(x) = v.buf.get(p) {
                     let fade = if v.fade > 0 { (rel as f32 / v.fade as f32).min(1.0) } else { 1.0 };
-                    s += x * v.gain * fade;
+                    let g = v.gain * fade;
+                    s += x * g;
+                    r += v.right.as_ref().and_then(|b| b.get(p)).unwrap_or(x) * g;
                 }
             }
-            out(i, s.clamp(-1.0, 1.0));
+            out(i, s.clamp(-1.0, 1.0), r.clamp(-1.0, 1.0));
         }
         self.frame = f0 + n as u64;
         let now = self.frame;
@@ -561,9 +566,18 @@ impl Engine {
                 let n = data.len() / ch.max(1);
                 m.render(
                     n,
-                    |i, v| {
-                        let v = T::from_sample(v);
-                        data[i * ch..(i + 1) * ch].iter_mut().for_each(|s| *s = v);
+                    |i, l, r| {
+                        let frame = &mut data[i * ch..(i + 1) * ch];
+                        match frame {
+                            [a, b, rest @ ..] => {
+                                *a = T::from_sample(l);
+                                *b = T::from_sample(r);
+                                let m = T::from_sample((l + r) * 0.5);
+                                rest.iter_mut().for_each(|s| *s = m);
+                            }
+                            [a] => *a = T::from_sample((l + r) * 0.5),
+                            [] => {}
+                        }
                     },
                     in_frames.load(Ordering::Relaxed),
                     ratio,
@@ -768,13 +782,18 @@ impl Engine {
 
     /// Schedules a buffer just ahead of the current output frame. Returns its start frame.
     fn schedule(&self, id: u64, buf: Vec<f32>, offset: usize, looping: bool, gain: f32, note: bool, rate: u32) -> u64 {
+        self.schedule_stereo(id, buf, None, offset, looping, gain, note, rate)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn schedule_stereo(&self, id: u64, buf: Vec<f32>, right: Option<Vec<f32>>, offset: usize, looping: bool, gain: f32, note: bool, rate: u32) -> u64 {
         let mut m = lock(&self.mixer);
         let start = m.frame + (SCHEDULE_AHEAD * rate as f64) as u64;
         let fade = if offset > 0 { (0.008 * rate as f64) as u64 } else { 0 };
         if note {
             m.voices.retain(|v| !v.note);
         }
-        m.voices.push(Voice { id, buf: Arc::new(buf), start, offset, looping, gain, fade, note });
+        m.voices.push(Voice { id, buf: Arc::new(buf), right: right.map(Arc::new), start, offset, looping, gain, fade, note });
         start
     }
 
@@ -840,6 +859,25 @@ impl Engine {
             }
             progress(Progress { job: id, kind: "play", phase: "sing", t: pos, total: len_s, beats: (pos - LEAD_IN) / beat, level: 0.0 });
             std::thread::sleep(Duration::from_millis(30));
+        }
+        Ok(())
+    }
+
+    /// Plays a stereo buffer (sung mix) from `from_sec`; `progress(position, total)` in seconds.
+    pub fn play_stereo(&self, id: u64, left: &[f32], right: &[f32], sr: u32, from_sec: f64, progress: &dyn Fn(f64, f64)) -> Result<()> {
+        let rate = self.out_rate()?;
+        let generation = self.generation.load(Ordering::Relaxed);
+        let (l, r) = (resample(left, sr, rate), resample(right, sr, rate));
+        let len_s = l.len() as f64 / rate as f64;
+        let from = if from_sec >= len_s - 0.05 { 0.0 } else { from_sec.max(0.0) };
+        let start = self.schedule_stereo(id, l, Some(r), (from * rate as f64) as usize, false, 1.0, false, rate);
+        while self.alive(id, generation)? {
+            let pos = from + self.heard(start, rate).max(0.0);
+            if pos >= len_s {
+                break;
+            }
+            progress(pos, len_s);
+            std::thread::sleep(Duration::from_millis(50));
         }
         Ok(())
     }
@@ -1069,10 +1107,10 @@ mod tests {
     #[test]
     fn mixer_schedules_loops_and_marks() {
         let mut m = Mixer::default();
-        m.voices.push(Voice { id: 7, buf: Arc::new(vec![1.0; 4]), start: 2, offset: 0, looping: false, gain: 0.5, fade: 0, note: false });
-        m.voices.push(Voice { id: 8, buf: Arc::new(vec![0.25, 0.0]), start: 0, offset: 1, looping: true, gain: 1.0, fade: 0, note: false });
+        m.voices.push(Voice { id: 7, buf: Arc::new(vec![1.0; 4]), right: None, start: 2, offset: 0, looping: false, gain: 0.5, fade: 0, note: false });
+        m.voices.push(Voice { id: 8, buf: Arc::new(vec![0.25, 0.0]), right: None, start: 0, offset: 1, looping: true, gain: 1.0, fade: 0, note: false });
         let mut out = vec![0f32; 8];
-        m.render(8, |i, v| out[i] = v, 1000, 1.0);
+        m.render(8, |i, v, _| out[i] = v, 1000, 1.0);
         assert_eq!(out, vec![0.0, 0.25, 0.5, 0.75, 0.5, 0.75, 0.0, 0.25]);
         assert_eq!(m.frame, 8);
         // the one-shot voice is gone, the loop stays; marks record the input counter at the start
@@ -1106,14 +1144,14 @@ mod tests {
         let (out_sr, in_sr, out_lat, in_start) = (48_000u32, 44_100u32, 0.2, 0.037);
         // render through the mixer in 10 ms chunks, the take scheduled like Engine::schedule
         let mut m = Mixer::default();
-        m.render(4800, |_, _| {}, 0, 0.0);
+        m.render(4800, |_, _, _| {}, 0, 0.0);
         let start = m.frame + (SCHEDULE_AHEAD * out_sr as f64) as u64;
         let buf = synth_take(&ph, out_sr, true, false);
         let mut out = vec![0f32; start as usize + buf.len() + out_sr as usize * 2];
-        m.voices.push(Voice { id: 1, buf: Arc::new(buf), start, offset: 0, looping: false, gain: 1.0, fade: 0, note: false });
+        m.voices.push(Voice { id: 1, buf: Arc::new(buf), right: None, start, offset: 0, looping: false, gain: 1.0, fade: 0, note: false });
         while (m.frame as usize) < out.len() - 480 {
             let f0 = m.frame as usize;
-            m.render(480, |i, v| out[f0 + i] = v, 0, 0.0);
+            m.render(480, |i, v, _| out[f0 + i] = v, 0, 0.0);
         }
         // the microphone: input frame j is captured at in_start + j / in_sr and hears the output
         // frame played at that moment (played at frame / out_sr + out_lat)

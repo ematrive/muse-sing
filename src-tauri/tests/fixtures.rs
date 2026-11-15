@@ -9,8 +9,6 @@ use muse_sing_lib::score::read_mscz;
 use muse_sing_lib::ustx;
 use serde_yaml::Value;
 
-const MEIJI: &str = "Gahata_Meiji_v160/configs/configs";
-
 /// The choir scores are not in the public repository: without them these tests pass empty.
 fn fixtures() -> Option<std::path::PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
@@ -22,19 +20,21 @@ fn fixtures() -> Option<std::path::PathBuf> {
     }
 }
 
-/// `first_pass`: the Python reference doesn't unroll repeats, compare only its notes.
-fn check_with(name: &str, singer: &str, expected_lang: Lang, fixture: &str, first_pass: bool) {
+/// `first_pass`: the Python reference doesn't unroll repeats, compare only its notes. The singer
+/// id is the one written in the reference file.
+fn check_with(name: &str, expected_lang: Lang, fixture: &str, first_pass: bool) {
     let Some(dir) = fixtures() else { return };
+    let theirs: Value = serde_yaml::from_str(&std::fs::read_to_string(dir.join(fixture)).unwrap()).unwrap();
+    let singer = theirs["tracks"][0]["singer"].as_str().unwrap_or_default();
     let score = read_mscz(&dir.join(format!("{name}.mscz"))).unwrap();
     let lang = detect_lang(&score.parts);
     assert_eq!(lang, expected_lang, "{name}: language");
     let hints = HashMap::new();
     let ours: Value = serde_yaml::from_str(&ustx::to_yaml(&ustx::build(
         &score,
-        &ustx::Options { lang, singer, parts: None, hints: &hints, fallback_name: name },
+        &ustx::Options { lang, singer, part_singers: None, parts: None, hints: &hints, fallback_name: name },
     )))
     .unwrap();
-    let theirs: Value = serde_yaml::from_str(&std::fs::read_to_string(dir.join(fixture)).unwrap()).unwrap();
 
     assert_eq!(ours["ustx_version"], theirs["ustx_version"]);
     assert_eq!(ours["time_signatures"], theirs["time_signatures"], "{name}: time signatures");
@@ -65,24 +65,24 @@ fn check_with(name: &str, singer: &str, expected_lang: Lang, fixture: &str, firs
     }
 }
 
-fn check(name: &str, singer: &str, expected_lang: Lang, fixture: &str) {
-    check_with(name, singer, expected_lang, fixture, false)
+fn check(name: &str, expected_lang: Lang, fixture: &str) {
+    check_with(name, expected_lang, fixture, false)
 }
 
 #[test]
 fn santo() {
-    check("santo", MEIJI, Lang::It, "santo.ustx");
+    check("santo", Lang::It, "santo.ustx");
 }
 
 #[test]
 fn agnello() {
-    check("agnello", MEIJI, Lang::It, "agnello.ustx");
+    check("agnello", Lang::It, "agnello.ustx");
 }
 
 #[test]
 fn adoro() {
     // repeat 1-18 twice, verse 2 in bars 11-18
-    check_with("adoro", MEIJI, Lang::It, "adoro.ustx", true);
+    check_with("adoro", Lang::It, "adoro.ustx", true);
     let Some(dir) = fixtures() else { return };
     let score = read_mscz(&dir.join("adoro.mscz")).unwrap();
     let voce = &score.parts.iter().find(|p| p.name == "Voce").unwrap().notes;
@@ -104,12 +104,12 @@ fn sonnet_parts_end_together() {
 
 #[test]
 fn sonnet() {
-    check("sonnet", MEIJI, Lang::En, "sonnet.ustx");
+    check("sonnet", Lang::En, "sonnet.ustx");
 }
 
 #[test]
 fn sonnet_tiger() {
-    check("sonnet", "TIGER_DS_v106", Lang::En, "sonnet_tiger.ustx");
+    check("sonnet", Lang::En, "sonnet_tiger.ustx");
 }
 
 #[test]

@@ -1,0 +1,37 @@
+Muse Sing
+Copyright (c) 2026 Emanuele Trivella — MIT License (see LICENSE)
+
+This product includes third-party software and data, listed below with their licences.
+
+--------------------------------------------------------------------------------
+OpenUtau — https://github.com/openutau/OpenUtau
+MIT License, Copyright (c) 2014 StAkira
+
+src-tauri/src/ds/ is a Rust port of OpenUtau's DiffSinger renderer and phonemizers
+(OpenUtau.Core/DiffSinger, OpenUtau.Core/Api G2p classes, OpenUtau.Core/Util/TimeAxis).
+src-tauri/resources/g2p/g2p-it.zip and g2p-arpabet-plus.zip are OpenUtau's G2p models
+and dictionaries, embedded unchanged (see OpenUtau's repository for the origin of
+their data). The full licence text is in
+src-tauri/resources/g2p/OPENUTAU-LICENSE.txt.
+
+--------------------------------------------------------------------------------
+LAME MP3 encoder — https://lame.sourceforge.io
+GNU Lesser General Public License v2 or later
+
+Compiled from source and linked statically through the mp3lame-sys crate, for the MP3
+export. Muse Sing's complete source code is public, so the application can be rebuilt
+and relinked with a modified LAME as the LGPL requires.
+
+--------------------------------------------------------------------------------
+ONNX Runtime — https://github.com/microsoft/onnxruntime
+MIT License, Copyright (c) Microsoft Corporation
+
+Linked statically through the ort crate.
+
+--------------------------------------------------------------------------------
+Other Rust crates (ort, flacenc, hound, cpal, tauri, serde and their dependencies) are
+used under their own MIT and/or Apache-2.0 licences.
+
+--------------------------------------------------------------------------------
+Voicebanks and vocoders are NOT part of Muse Sing and are not distributed with it. Each
+one has its own licence (for example TIGER DS: CC BY-NC-ND 4.0, non-commercial).

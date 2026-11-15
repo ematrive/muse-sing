@@ -17,15 +17,55 @@ export type Analysis = {
   default_output: string;
 };
 
-export type SingerInfo = { id: string; name: string; singer_type: string; langs: string[] };
-export type SingersList = { singers: SingerInfo[]; folders: string[]; selected: Partial<Record<Lang, string>> };
+export type SingerInfo = {
+  id: string;
+  name: string;
+  singer_type: string;
+  langs: string[];
+  path: string;
+  /** Installed in OpenUtau: usable in a .ustx. */
+  openutau: boolean;
+  /** Muse Sing's engine can sing with it; otherwise `engine_note` says why. */
+  engine: boolean;
+  engine_note: string | null;
+  colors: string[];
+};
+export type PartPref = { singer: string; color: string | null };
+export type SingersList = {
+  singers: SingerInfo[];
+  folders: string[];
+  own_folder: string | null;
+  selected: Partial<Record<Lang, string>>;
+  /** Saved singer per part name (lowercase). */
+  parts: Record<string, PartPref>;
+};
 export type GenerateResult = { output: string; tracks: number; notes: number };
 
 export const api = {
   analyze: (path: string) => invoke<Analysis>("analyze", { path }),
   listSingers: () => invoke<SingersList>("list_singers"),
-  generate: (req: { path: string; output: string; lang: Lang; singer: string; parts: string[] }) =>
+  generate: (req: { path: string; output: string; lang: Lang; singer: string; parts: string[]; part_singers: Record<string, string> }) =>
     invoke<GenerateResult>("generate", { req }),
+};
+
+// --- sung audio (Muse Sing's DiffSinger engine) --------------------------------------------------
+
+export type PitchMode = "model" | "notes";
+export type RenderPart = { name: string; singer: string; color: string | null };
+export type RenderRequest = { path: string; lang: Lang; pitch: PitchMode; parts: RenderPart[] };
+export type MixPart = { name: string; volume_db: number; pan: number; mute: boolean };
+export type SingProgress = { job: number; part: string; index: number; parts: number; phrase: number; phrases: number; cached: boolean };
+export type SingDone = { job: number; error: string | null; cancelled: boolean; warnings: string[]; seconds: number };
+export type PlayProgress = { job: number; t: number; total: number };
+export type PlayDone = { job: number; error: string | null };
+
+/** Render: `sing-progress` / `sing-done` events; playback: `sing-play` / `sing-play-done`. */
+export const singApi = {
+  start: (req: RenderRequest) => invoke<number>("sing_start", { req }),
+  cancel: () => invoke<void>("sing_cancel"),
+  play: (mix: MixPart[], fromSec: number) => invoke<number>("sing_play", { mix, fromSec }),
+  stop: () => invoke<void>("sing_stop"),
+  export: (mix: MixPart[], path: string) => invoke<string>("sing_export", { mix, path }),
 };
 
 export const LANGS: Record<Lang, string> = { it: "Italiano", en: "English" };

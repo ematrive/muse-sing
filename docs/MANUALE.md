@@ -1,10 +1,10 @@
 # Manuale di Muse Sing
 
-Muse Sing trasforma una partitura MuseScore in un progetto OpenUtau in cui le voci cantano davvero le parole, non solo «oh oh». Serve soprattutto per **l'ascolto d'insieme**: sentire il brano cantato con il testo, voce per voce o tutte insieme.
+Muse Sing fa cantare una partitura MuseScore: le voci cantano davvero le parole, non solo «oh oh». Serve soprattutto per **l'ascolto d'insieme**: sentire il brano cantato con il testo, voce per voce o tutte insieme, e portarsi a casa un MP3 per studiare.
 
 L'app ha tre schede:
 
-- **Da MuseScore a OpenUtau:** crea il file `.ustx` da aprire in OpenUtau.
+- **Canta una partitura:** genera l'audio cantato (un cantante per ogni voce) da ascoltare o esportare in MP3, FLAC o WAV. Se vuoi ritoccare la pronuncia in OpenUtau, crea anche il file `.ustx`.
 - **Registra un cantante:** raccoglie le registrazioni per costruire un cantante italiano con la voce di un corista.
 - **Manuale:** questa guida e le novità di ogni versione.
 
@@ -14,7 +14,7 @@ Servono tre cose, da installare una volta sola.
 
 ### 1. OpenUtau
 
-È il programma che fa cantare le voci.
+Muse Sing canta da solo: OpenUtau serve solo se vuoi ritoccare un brano a mano (fonemi, curve) con il file `.ustx`, ed è il posto più comodo dove installare i cantanti.
 
 1. Scarica il `.dmg` per macOS dall'ultima versione su https://github.com/stakira/OpenUtau/releases.
 2. Trascina OpenUtau in Applicazioni.
@@ -28,22 +28,19 @@ Servono tre cose, da installare una volta sola.
 
 ### 2. I cantanti (voicebank)
 
-| Lingua | Cantante | Download |
-|---|---|---|
-| Italiano | Gahata Meiji v160 | https://github.com/lunaiproject/lunai_singers/releases/download/Gahata_Meiji_v160/Gahata_Meiji_v160.zip |
-| Inglese | TIGER DS v106 | https://github.com/spicytigermeat/tiger_diffsinger/releases/download/v106/TIGER_DS_v106_PACK.zip |
+Per ora Muse Sing usa **TIGER DS v106**, che canta sia in italiano sia in inglese: https://github.com/spicytigermeat/tiger_diffsinger/releases/download/v106/TIGER_DS_v106_PACK.zip
 
-Installali a mano dal Terminale. Il trascinamento dentro OpenUtau a volte chiede una codifica e poi non fa nulla.
+Nel pacchetto c'è un secondo zip dentro `Voice Library/`: è quello da decomprimere. Installalo a mano dal Terminale (il trascinamento dentro OpenUtau a volte chiede una codifica e poi non fa nulla):
 
 ```
-mkdir -p ~/Library/OpenUtau/Singers/Gahata_Meiji
-cd ~/Library/OpenUtau/Singers/Gahata_Meiji
-unzip ~/Downloads/Gahata_Meiji_v160.zip
+mkdir -p ~/Library/OpenUtau/Singers/Tiger
+cd ~/Library/OpenUtau/Singers/Tiger
+unzip ~/Downloads/TIGER_DS_v106.zip
 ```
-
-Per Tiger fai lo stesso con la cartella `Tiger`. Attenzione: nel pacchetto di Tiger c'è un secondo zip dentro `Voice Library/`, ed è quello da decomprimere.
 
 Riapri OpenUtau e controlla in **Strumenti → Cantanti** che i cantanti compaiano.
+
+Muse Sing legge i cantanti dalla cartella di OpenUtau. Un cantante che vuoi usare solo in Muse Sing (per esempio quello costruito con la scheda Registra) va invece in `~/Library/Application Support/app.musesing.desktop/Singers`.
 
 ### 3. Muse Sing
 
@@ -56,14 +53,27 @@ Riapri OpenUtau e controlla in **Strumenti → Cantanti** che i cantanti compaia
 
 **Aggiornamenti e novità.** All'avvio Muse Sing controlla se c'è una versione nuova. Se c'è, mostra le novità e chiede se aggiornare: con «Aggiorna» scarica, installa e si riavvia da sola. Il numero di versione in alto a destra apre le novità di ogni versione; un pallino viola segnala quelle che non hai ancora letto. Dopo un aggiornamento macOS può chiedere di nuovo il permesso per il microfono, una volta.
 
-## Da MuseScore a OpenUtau
+## Canta una partitura
 
-1. Apri la scheda **Da MuseScore a OpenUtau**.
+1. Apri la scheda **Canta una partitura**.
 2. **Trascina** il file `.mscz` nella finestra, oppure clicca e sceglilo. Compaiono titolo, metro, tempo, durata e l'elenco delle voci con le prime parole.
 3. Controlla la **lingua**: viene riconosciuta da sola, ma puoi cambiarla.
-4. Scegli il **cantante**. La prima volta Muse Sing propone Gahata Meiji per l'italiano e Tiger per l'inglese, poi ricorda la tua scelta. Se l'elenco è vuoto, installa un cantante in OpenUtau e premi «aggiorna».
-5. Spunta le **voci da cantare**. Le parti senza testo (organo, pianoforte) non si possono selezionare.
-6. Premi **Crea .ustx** e scegli dove salvarlo. Con «Mostra nel Finder» trovi subito il file.
+4. Scegli l'**intonazione**:
+   - **naturale:** il cantante decide come attaccare e legare le note, con un po' di vibrato. Suona più umano;
+   - **esatta:** la voce sta ferma sulle note scritte. Utile per controllare l'intonazione della propria parte.
+5. Spunta le **voci da cantare** e scegli il **cantante** di ognuna. Se il cantante ha più colori di voce (Tiger ne ha diversi), accanto compare la scelta del colore. Muse Sing ricorda il cantante di ogni voce (Soprano, Tenore…) da un brano all'altro.
+6. Premi **Genera audio**. Il Mac calcola le voci una dopo l'altra: per un brano di 3-4 minuti con quattro voci servono alcuni minuti. Puoi annullare; la frase in corso finisce prima di fermarsi.
+7. Premi **Ascolta**. Con la barra scegli da dove partire.
+8. Regola il **mix** di ogni voce: volume, posizione a sinistra o a destra (pan), «muta» per escluderla. Le modifiche si sentono subito, senza rigenerare: per esempio alza la tua voce o muta le altre. Doppio clic su un cursore lo riporta a zero.
+9. Premi **Esporta…** e scegli il formato: MP3 (per il telefono), FLAC (senza perdita di qualità) o WAV.
+
+Le voci già generate con lo stesso cantante e la stessa partitura vengono riusate: se cambi il cantante di una sola voce, si rigenera solo quella. Se cambi voci, cantanti, lingua o intonazione dopo aver generato, Muse Sing chiede di generare di nuovo.
+
+**Avvisi di pronuncia.** Sotto il lettore, «avvisi di pronuncia» elenca le parole che il cantante non sa dire del tutto (un suono che non ha). Di solito la parola si sente lo stesso, con quel suono saltato.
+
+### Progetto OpenUtau (.ustx)
+
+Per ritoccare fonemi e curve, premi **Crea .ustx** nel riquadro in basso e scegli dove salvarlo. Ogni voce usa il cantante scelto sopra.
 
 ### Ascoltare in OpenUtau
 
@@ -112,7 +122,7 @@ Il riquadro giallo elenca ciò che Muse Sing non gestisce del tutto:
 
 ## Registra un cantante
 
-Questa scheda serve a costruire un cantante italiano con la voce di un corista, al posto di Gahata Meiji che ha un timbro e una pronuncia giapponesi. Si registrano circa **un'ora di frasi per ogni voce**: per esempio una femminile e una maschile. Con le registrazioni si addestra poi un modello DiffSinger da installare in OpenUtau come gli altri cantanti.
+Questa scheda serve a costruire un cantante italiano con la voce di un corista. Si registrano circa **un'ora di frasi per ogni voce**: per esempio una femminile e una maschile. Con le registrazioni si addestra poi un modello DiffSinger da installare in OpenUtau come gli altri cantanti.
 
 ### Cosa serve
 
@@ -233,7 +243,13 @@ xattr -cr "/Applications/Muse Sing.app"
 Lo stesso vale per OpenUtau.
 
 **Nessun cantante nell'elenco.**
-Controlla che i cantanti siano in `~/Library/OpenUtau/Singers` e che OpenUtau li veda, poi premi «aggiorna» in Muse Sing.
+Controlla che i cantanti siano in `~/Library/OpenUtau/Singers` e che OpenUtau li veda, poi premi «aggiorna cantanti» in Muse Sing.
+
+**Accanto al cantante c'è scritto «solo .ustx».**
+Muse Sing non può usare quel cantante per generare l'audio: il motivo è scritto sotto la voce (di solito richiede parti del motore non ancora supportate). Puoi comunque usarlo nel `.ustx` con OpenUtau.
+
+**«Genera audio» è lento.**
+Il calcolo usa il processore del Mac e dura circa quanto il brano, per ogni voce. La seconda volta le voci già generate sono pronte subito.
 
 **Il cantante pronuncia male una parola.**
 Controlla che non sia un refuso nella partitura. Poi correggila in OpenUtau con la pronuncia tra parentesi quadre (vedi «Pronuncia»).
@@ -256,6 +272,7 @@ Usa cuffie chiuse e abbassa il volume, oppure spegni «melodia in cuffia mentre 
 
 ## Licenze
 
-- **Gahata Meiji** (LUNAI Project) e **TIGER DS** (tigermeat): gratuiti solo per uso non commerciale, citando l'autore. Non si possono ridistribuire.
+- **TIGER DS** (tigermeat): gratuito solo per uso non commerciale, citando l'autore. Non si può ridistribuire né modificare.
+- **Motore di Muse Sing:** deriva dal codice DiffSinger di OpenUtau (licenza MIT); l'export MP3 usa LAME (licenza LGPL). Dettagli nel file NOTICE del progetto.
 - **Cantanti costruiti con la scheda Registra:** la voce appartiene a chi l'ha registrata. Usali solo per il coro e con il suo consenso. La parte che produce l'audio finale (il vocoder openvpi) ha licenza CC BY-NC-SA 4.0, cioè non commerciale.
 - **Muse Sing:** © 2026 Emanuele Trivella, licenza MIT.

@@ -39,6 +39,16 @@ pub struct RenderRequest {
     /// "model" (natural intonation) or "notes" (exact pitch).
     pub pitch: String,
     pub parts: Vec<PartReq>,
+    /// 1.0 = written tempo, 0.8 = 80% (practice).
+    #[serde(default = "one")]
+    pub tempo_factor: f64,
+    /// Add the instrumental parts, played by an organ sound.
+    #[serde(default)]
+    pub accompaniment: bool,
+}
+
+fn one() -> f64 {
+    1.0
 }
 
 #[derive(Serialize, Clone)]
@@ -156,8 +166,11 @@ impl Sing {
         singers: &[SingerInfo],
         progress: &dyn Fn(Progress),
     ) -> Result<Option<(Vec<String>, f64)>> {
-        if req.parts.is_empty() {
+        if req.parts.is_empty() && !req.accompaniment {
             return Err(Error::Other("scegli almeno una voce".into()));
+        }
+        if !(0.25..=2.0).contains(&req.tempo_factor) {
+            return Err(Error::Other(format!("velocità {:.0}% non valida", req.tempo_factor * 100.0)));
         }
         crate::log!("genera audio: {} ({} voci, lingua {}, intonazione {})", req.path, req.parts.len(), req.lang.code(), req.pitch);
         let pitch = match req.pitch.as_str() {
@@ -185,16 +198,20 @@ impl Sing {
         let src = PathBuf::from(&req.path);
         let sc = score::read_mscz(&src)?;
         let names: Vec<String> = req.parts.iter().map(|p| p.name.clone()).collect();
+        crate::log!("velocità {:.0}%, accompagnamento {}", req.tempo_factor * 100.0, if req.accompaniment { "sì" } else { "no" });
         let hints = HashMap::new();
         let fallback = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let project = ustx::build(
+        let mut project = ustx::build(
             &sc,
             &ustx::Options { lang: req.lang, singer: "", part_singers: None, parts: Some(&names), hints: &hints, fallback_name: &fallback },
         );
+        for t in &mut project.tempos {
+            t.bpm *= req.tempo_factor;
+        }
         let axis = ds::project_axis(&project);
         let tempo_key: String = project.tempos.iter().map(|t| format!("{}:{};", t.position, t.bpm)).collect();
         let parts = ds::project_notes(&project);
-        if parts.is_empty() {
+        if parts.is_empty() && !req.accompaniment {
             return Err(Error::Other("nessuna delle voci scelte ha il testo".into()));
         }
 
@@ -251,6 +268,16 @@ impl Sing {
         }
         if !self.is_current(job) {
             return Ok(None);
+        }
+        if req.accompaniment {
+            let samples = crate::accomp::render(&sc, &axis, ds::render::SAMPLE_RATE);
+            if !samples.is_empty() {
+                crate::log!("accompagnamento: {:.1} s", samples.len() as f64 / ds::render::SAMPLE_RATE as f64);
+                tracks.push(Track { name: crate::project::ACCOMPANIMENT.into(), samples: Arc::new(samples) });
+            }
+        }
+        if tracks.is_empty() {
+            return Err(Error::Other("niente da suonare: la partitura non ha né voci scelte né parti strumentali".into()));
         }
         let seconds = tracks.iter().map(|t| t.samples.len()).max().unwrap_or(0) as f64 / ds::render::SAMPLE_RATE as f64;
         *lock(&self.tracks) = tracks;

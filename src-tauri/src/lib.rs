@@ -1,3 +1,4 @@
+pub mod accomp;
 pub mod audio;
 pub mod commands;
 pub mod corpus;
@@ -5,6 +6,7 @@ pub mod ds;
 pub mod error;
 pub mod lyrics;
 pub mod mix;
+pub mod project;
 pub mod score;
 pub mod sing;
 pub mod singers;
@@ -27,7 +29,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::analyze,
             commands::list_singers,
-            commands::generate,
             commands::voice_recent,
             commands::voice_create,
             commands::voice_open,
@@ -46,6 +47,13 @@ pub fn run() {
             commands::sing_play,
             commands::sing_stop,
             commands::sing_export,
+            commands::sing_export_guides,
+            commands::project_new,
+            commands::project_open,
+            commands::project_save,
+            commands::project_reload_score,
+            commands::project_recent,
+            commands::score_roll,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

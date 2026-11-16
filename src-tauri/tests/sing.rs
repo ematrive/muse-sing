@@ -36,6 +36,8 @@ fn renders_mixes_and_reuses_the_cache() {
         lang: Lang::It,
         pitch: "notes".into(),
         parts: vec![PartReq { name: "Soprano".into(), singer: "test".into(), color: None }],
+        tempo_factor: 1.0,
+        accompaniment: false,
     };
     let t = std::time::Instant::now();
     let job = sing.begin();
@@ -44,7 +46,7 @@ fn renders_mixes_and_reuses_the_cache() {
     assert!(secs > 10.0);
     assert!(warnings.iter().all(|w| !w.contains("non riconosciuti")), "{warnings:?}");
 
-    let part = MixPart { name: "Soprano".into(), volume_db: 0.0, pan: -0.5, mute: false };
+    let part = MixPart { name: "Soprano".into(), volume_db: 0.0, pan: -0.5, mute: false, solo: false };
     let (l, r) = sing.with_tracks(|t| mix::mix(t, std::slice::from_ref(&part))).unwrap();
     let rms = |x: &[f32]| (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt();
     assert!(rms(&l) > 0.01, "not silent");
@@ -96,4 +98,35 @@ fn finds_the_singer_and_remaps_italian_hints() {
     }
     let plain = words(&[note(0, "signore"), note(480, "+"), note(960, "+")]);
     assert!(plain.iter().any(|p| p == "ny"), "{plain:?}");
+}
+
+/// The accompaniment alone (no singer needed) and the practice tempo: 80% lasts 1/0.8 as long.
+#[test]
+fn accompaniment_and_slower_tempo() {
+    let score = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/santo.mscz");
+    if !score.exists() {
+        eprintln!("fixture missing: skipped");
+        return;
+    }
+    let sing = Sing::new(None);
+    let run = |tempo_factor: f64| {
+        let req = RenderRequest {
+            path: score.to_string_lossy().into_owned(),
+            lang: Lang::It,
+            pitch: "model".into(),
+            parts: vec![],
+            tempo_factor,
+            accompaniment: true,
+        };
+        let job = sing.begin();
+        sing.run(job, &req, &[], &|_| {}).unwrap().expect("not cancelled").1
+    };
+    let normal = run(1.0);
+    let slow = run(0.8);
+    eprintln!("accompaniment {normal:.1}s, at 80% {slow:.1}s");
+    assert!(normal > 30.0);
+    assert!((slow / normal - 1.25).abs() < 0.02, "{slow} / {normal}");
+    let organ = MixPart { name: muse_sing_lib::project::ACCOMPANIMENT.into(), volume_db: 0.0, pan: 0.0, mute: false, solo: false };
+    let (l, _) = sing.with_tracks(|t| mix::mix(t, std::slice::from_ref(&organ))).unwrap();
+    assert!(l.iter().any(|x| x.abs() > 0.01), "the organ plays");
 }

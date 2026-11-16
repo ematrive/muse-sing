@@ -1,7 +1,7 @@
 import { AudioLines, BookOpen, Mic2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { checkForUpdate, hasNews, markNewsSeen } from "./lib/update";
-import Convert from "./views/Convert";
+import ProjectView from "./views/Project";
 import Manual, { type ManualPage } from "./views/Manual";
 import Record from "./views/Record";
 
@@ -53,7 +53,7 @@ export default function App() {
           </button>
         </div>
       </header>
-      <Convert active={tab === "convert"} />
+      <ProjectView active={tab === "convert"} />
       <Record active={tab === "record"} />
       <Manual active={tab === "manual"} page={manualPage} setPage={setManualPage} />
     </div>

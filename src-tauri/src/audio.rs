@@ -864,19 +864,43 @@ impl Engine {
     }
 
     /// Plays a stereo buffer (sung mix) from `from_sec`; `progress(position, total)` in seconds.
-    pub fn play_stereo(&self, id: u64, left: &[f32], right: &[f32], sr: u32, from_sec: f64, progress: &dyn Fn(f64, f64)) -> Result<()> {
+    /// With `loop_range` (from, to in seconds) it repeats that stretch until stopped.
+    #[allow(clippy::too_many_arguments)]
+    pub fn play_stereo(
+        &self,
+        id: u64,
+        left: &[f32],
+        right: &[f32],
+        sr: u32,
+        from_sec: f64,
+        loop_range: Option<(f64, f64)>,
+        progress: &dyn Fn(f64, f64),
+    ) -> Result<()> {
         let rate = self.out_rate()?;
         let generation = self.generation.load(Ordering::Relaxed);
-        let (l, r) = (resample(left, sr, rate), resample(right, sr, rate));
+        let total_s = left.len() as f64 / sr as f64;
+        let range = loop_range
+            .map(|(a, b)| (a.clamp(0.0, total_s), b.clamp(0.0, total_s)))
+            .filter(|(a, b)| b - a >= 0.5);
+        let (base, l, r) = match range {
+            Some((a, b)) => {
+                let (i, j) = ((a * sr as f64) as usize, (b * sr as f64) as usize);
+                (a, resample(&left[i..j], sr, rate), resample(&right[i..j], sr, rate))
+            }
+            None => (0.0, resample(left, sr, rate), resample(right, sr, rate)),
+        };
         let len_s = l.len() as f64 / rate as f64;
-        let from = if from_sec >= len_s - 0.05 { 0.0 } else { from_sec.max(0.0) };
-        let start = self.schedule_stereo(id, l, Some(r), (from * rate as f64) as usize, false, 1.0, false, rate);
+        let rel = from_sec - base;
+        let from = if rel < 0.0 || rel >= len_s - 0.05 { 0.0 } else { rel };
+        let start = self.schedule_stereo(id, l, Some(r), (from * rate as f64) as usize, range.is_some(), 1.0, false, rate);
         while self.alive(id, generation)? {
-            let pos = from + self.heard(start, rate).max(0.0);
-            if pos >= len_s {
+            let mut pos = from + self.heard(start, rate).max(0.0);
+            if range.is_some() {
+                pos %= len_s;
+            } else if pos >= len_s {
                 break;
             }
-            progress(pos, len_s);
+            progress(base + pos, total_s);
             std::thread::sleep(Duration::from_millis(50));
         }
         Ok(())

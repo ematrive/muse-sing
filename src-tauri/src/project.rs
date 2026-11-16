@@ -1,0 +1,220 @@
+//! Muse Sing projects (`.musesing`): a zip with `project.json` (choices, mix, edits) and a copy
+//! of the score (`score.mscz`), so a project can be moved or sent on its own. Rendered audio is
+//! not stored: it lives in the render cache and can always be made again.
+
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::{Error, Result};
+use crate::lyrics::Lang;
+
+pub const EXTENSION: &str = "musesing";
+const FORMAT_VERSION: u32 = 1;
+const PROJECT_JSON: &str = "project.json";
+const SCORE: &str = "score.mscz";
+/// Name of the accompaniment track in the mix.
+pub const ACCOMPANIMENT: &str = "Accompagnamento";
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_tempo() -> f64 {
+    1.0
+}
+
+fn default_pitch() -> String {
+    "model".into()
+}
+
+/// One part of the score: whether it is sung, by whom, and its place in the mix.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PartCfg {
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub sing: bool,
+    #[serde(default)]
+    pub singer: String,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub volume_db: f32,
+    #[serde(default)]
+    pub pan: f32,
+    #[serde(default)]
+    pub mute: bool,
+    #[serde(default)]
+    pub solo: bool,
+}
+
+/// The instrumental parts, played by a simple organ sound.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AccompCfg {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_accomp_db")]
+    pub volume_db: f32,
+    #[serde(default)]
+    pub pan: f32,
+    #[serde(default)]
+    pub mute: bool,
+    #[serde(default)]
+    pub solo: bool,
+}
+
+fn default_accomp_db() -> f32 {
+    -6.0
+}
+
+impl Default for AccompCfg {
+    fn default() -> Self {
+        AccompCfg { enabled: false, volume_db: default_accomp_db(), pan: 0.0, mute: false, solo: false }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Project {
+    pub version: u32,
+    pub title: String,
+    /// File name of the score it was made from (for display; the score itself is inside).
+    #[serde(default)]
+    pub score_name: String,
+    pub lang: Lang,
+    /// "model" or "notes".
+    #[serde(default = "default_pitch")]
+    pub pitch: String,
+    /// 1.0 = written tempo; 0.8 = 80% (slower, for practice).
+    #[serde(default = "default_tempo")]
+    pub tempo_factor: f64,
+    #[serde(default)]
+    pub parts: Vec<PartCfg>,
+    #[serde(default)]
+    pub accompaniment: AccompCfg,
+    /// Pronunciation and curve edits per part (filled by the editor; kept as-is otherwise).
+    #[serde(default)]
+    pub edits: HashMap<String, serde_json::Value>,
+}
+
+impl Project {
+    pub fn new(title: &str, score_name: &str, lang: Lang, parts: Vec<PartCfg>, has_instruments: bool) -> Project {
+        Project {
+            version: FORMAT_VERSION,
+            title: title.to_string(),
+            score_name: score_name.to_string(),
+            lang,
+            pitch: default_pitch(),
+            tempo_factor: 1.0,
+            parts,
+            accompaniment: AccompCfg { enabled: has_instruments, ..AccompCfg::default() },
+            edits: HashMap::new(),
+        }
+    }
+}
+
+fn zip_err(e: impl std::fmt::Display) -> Error {
+    Error::Format(format!("progetto: {e}"))
+}
+
+/// Writes the project and the score into `path` (through a temporary file, so a failed save
+/// leaves the previous version intact).
+pub fn save(path: &Path, project: &Project, score: &[u8]) -> Result<()> {
+    let tmp = path.with_extension("musesing.part");
+    {
+        let file = std::fs::File::create(&tmp)?;
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file(PROJECT_JSON, opts).map_err(zip_err)?;
+        zip.write_all(serde_json::to_string_pretty(project).map_err(zip_err)?.as_bytes())?;
+        // the .mscz is already compressed
+        zip.start_file(SCORE, opts.compression_method(zip::CompressionMethod::Stored)).map_err(zip_err)?;
+        zip.write_all(score)?;
+        zip.finish().map_err(zip_err)?;
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Reads a project: (project, score bytes).
+pub fn open(path: &Path) -> Result<(Project, Vec<u8>)> {
+    let file = std::fs::File::open(path)?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|_| Error::Format("non è un progetto Muse Sing".into()))?;
+    let mut text = String::new();
+    zip.by_name(PROJECT_JSON).map_err(|_| Error::Format("progetto senza project.json".into()))?.read_to_string(&mut text)?;
+    let project: Project = serde_json::from_str(&text).map_err(|e| Error::Format(format!("project.json: {e}")))?;
+    if project.version > FORMAT_VERSION {
+        return Err(Error::Format("progetto creato da una versione più nuova di Muse Sing: aggiorna l'app".into()));
+    }
+    let mut score = vec![];
+    zip.by_name(SCORE).map_err(|_| Error::Format("progetto senza partitura".into()))?.read_to_end(&mut score)?;
+    Ok((project, score))
+}
+
+/// FNV-1a of the score bytes, to name its working copy.
+pub fn hash(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf29ce484222325u64, |h, b| (h ^ *b as u64).wrapping_mul(0x100000001b3))
+}
+
+/// Puts the score in the cache folder (where the rest of the app reads it) and returns its path.
+pub fn working_copy(cache_dir: &Path, score: &[u8]) -> Result<PathBuf> {
+    let dir = cache_dir.join("projects");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{:016x}.mscz", hash(score)));
+    if !path.is_file() {
+        std::fs::write(&path, score)?;
+    }
+    Ok(path)
+}
+
+/// Keeps the settings of the parts that are still in the score (by name), adds the new ones
+/// with `fresh`, and drops the ones that are gone.
+pub fn merge_parts(old: &[PartCfg], fresh: Vec<PartCfg>) -> Vec<PartCfg> {
+    fresh.into_iter().map(|f| old.iter().find(|o| o.name == f.name).cloned().unwrap_or(f)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn part(name: &str) -> PartCfg {
+        PartCfg { name: name.into(), sing: true, singer: "s".into(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false }
+    }
+
+    #[test]
+    fn round_trip() {
+        let dir = std::env::temp_dir().join(format!("muse-sing-project-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut p = Project::new("Santo", "santo.mscz", Lang::It, vec![part("Soprano"), part("Basso")], true);
+        p.tempo_factor = 0.8;
+        p.parts[1].volume_db = -3.0;
+        p.edits.insert("Soprano".into(), serde_json::json!({"words": {"x": "y"}}));
+        let path = dir.join("t.musesing");
+        save(&path, &p, b"fake score").unwrap();
+        let (back, score) = open(&path).unwrap();
+        assert_eq!(back, p);
+        assert_eq!(score, b"fake score");
+        let wc = working_copy(&dir, &score).unwrap();
+        assert_eq!(std::fs::read(&wc).unwrap(), b"fake score");
+        assert!(open(&wc).is_err(), "a .mscz is not a project");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn old_files_get_defaults() {
+        let p: Project = serde_json::from_str(r#"{"version":1,"title":"t","lang":"it","parts":[{"name":"A"}]}"#).unwrap();
+        assert_eq!(p.tempo_factor, 1.0);
+        assert_eq!(p.pitch, "model");
+        assert!(p.parts[0].sing && !p.accompaniment.enabled);
+    }
+
+    #[test]
+    fn reload_keeps_known_parts() {
+        let mut a = part("A");
+        a.volume_db = 4.0;
+        let merged = merge_parts(&[a, part("Gone")], vec![part("A"), part("New")]);
+        assert_eq!(merged.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["A", "New"]);
+        assert_eq!(merged[0].volume_db, 4.0);
+    }
+}

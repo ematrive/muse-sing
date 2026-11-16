@@ -8,7 +8,6 @@ use crate::error::{Error, Result};
 use crate::lyrics::{detect_lang, word_lyrics, Lang};
 use crate::score::read_mscz;
 use crate::singers::{self, SingerInfo};
-use crate::ustx;
 
 #[derive(Serialize)]
 pub struct PartInfo {
@@ -31,6 +30,7 @@ pub struct Analysis {
     pub duration_sec: f64,
     pub parts: Vec<PartInfo>,
     pub warnings: Vec<String>,
+    /// Original file path without extension, to propose names for exports and projects.
     pub default_output: String,
 }
 
@@ -44,7 +44,14 @@ pub fn analyze(path: String) -> Result<Analysis> {
     if p.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref() != Some("mscz") {
         return Err(Error::Format("serve un file MuseScore (.mscz)".into()));
     }
-    let score = read_mscz(&p)?;
+    analysis_of(&p, &p)
+}
+
+/// Analysis of the score at `p`, shown with the name of `display` (the original file, when `p`
+/// is a project's working copy).
+fn analysis_of(p: &Path, display: &Path) -> Result<Analysis> {
+    let path = p.to_string_lossy().into_owned();
+    let score = read_mscz(p)?;
     let lang = detect_lang(&score.parts);
     let no_hints = HashMap::new();
     let parts = score
@@ -89,10 +96,10 @@ pub fn analyze(path: String) -> Result<Analysis> {
     let q = score.tempos[0].1;
     let (n, d) = score.time_sig;
     let bpm = if d == 8 && n % 3 == 0 { q * 60.0 / 1.5 } else { q * 60.0 };
-    let out = p.with_extension("ustx");
+    let out = display.with_extension("");
     Ok(Analysis {
-        file_name: p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(),
-        title: score.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| stem(&p)),
+        file_name: display.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(),
+        title: score.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| stem(display)),
         path,
         lang,
         time_sig: format!("{n}/{d}"),
@@ -131,6 +138,8 @@ struct Prefs {
     parts: HashMap<String, PartPref>,
     #[serde(default)]
     recent_voices: Vec<RecentVoice>,
+    #[serde(default)]
+    recent_projects: Vec<RecentProject>,
 }
 
 fn prefs_path(app: &tauri::AppHandle) -> Option<PathBuf> {
@@ -214,73 +223,6 @@ fn remember_singers(app: &tauri::AppHandle, lang: Lang, parts: &[(String, PartPr
         prefs.parts.insert(name.to_lowercase(), p.clone());
     }
     save_prefs(app, &prefs);
-}
-
-#[derive(Deserialize)]
-pub struct GenerateRequest {
-    pub path: String,
-    pub output: String,
-    pub lang: Lang,
-    pub singer: String,
-    pub parts: Vec<String>,
-    /// Singer id per part, overriding `singer`.
-    #[serde(default)]
-    pub part_singers: HashMap<String, String>,
-}
-
-#[derive(Serialize)]
-pub struct GenerateResult {
-    pub output: String,
-    pub tracks: usize,
-    pub notes: usize,
-}
-
-#[tauri::command]
-pub fn generate(app: tauri::AppHandle, req: GenerateRequest) -> Result<GenerateResult> {
-    let src = PathBuf::from(&req.path);
-    let score = read_mscz(&src)?;
-    if req.singer.trim().is_empty() && req.part_singers.is_empty() {
-        return Err(Error::Other("scegli il cantante".into()));
-    }
-    if req.parts.is_empty() {
-        return Err(Error::Other("scegli almeno una voce".into()));
-    }
-    let own: Vec<&String> = req.part_singers.values().chain([&req.singer]).filter(|s| s.starts_with(singers::OWN_PREFIX)).collect();
-    if let Some(s) = own.first() {
-        return Err(Error::Other(format!(
-            "«{}» è nella cartella cantanti di Muse Sing, OpenUtau non lo vede: per il .ustx scegli un cantante installato in OpenUtau",
-            s.trim_start_matches(singers::OWN_PREFIX)
-        )));
-    }
-    let hints = HashMap::new();
-    let project = ustx::build(
-        &score,
-        &ustx::Options {
-            lang: req.lang,
-            singer: &req.singer,
-            part_singers: Some(&req.part_singers),
-            parts: Some(&req.parts),
-            hints: &hints,
-            fallback_name: &stem(&src),
-        },
-    );
-    let mut out = PathBuf::from(&req.output);
-    if out.extension().is_none() {
-        out.set_extension("ustx");
-    }
-    std::fs::write(&out, ustx::to_yaml(&project))?;
-    let chosen: Vec<(String, PartPref)> = req
-        .parts
-        .iter()
-        .map(|p| (p.clone(), PartPref { singer: req.part_singers.get(p).unwrap_or(&req.singer).clone(), color: None }))
-        .filter(|(_, p)| !p.singer.is_empty())
-        .collect();
-    remember_singers(&app, req.lang, &chosen);
-    Ok(GenerateResult {
-        output: out.to_string_lossy().to_string(),
-        tracks: project.tracks.len(),
-        notes: project.voice_parts.iter().map(|p| p.notes.len()).sum(),
-    })
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -552,6 +494,7 @@ pub async fn sing_play(
     state: State<'_, SingState>,
     mix: Vec<MixPart>,
     from_sec: f64,
+    loop_range: Option<(f64, f64)>,
 ) -> Result<u64> {
     let (sing, engine) = (state.0.clone(), audio.0.clone());
     let (l, r) = sing.with_tracks(|t| mix::mix(t, &mix))?;
@@ -568,7 +511,7 @@ pub async fn sing_play(
         let progress = |t: f64, total: f64| {
             let _ = app.emit("sing-play", PlayProgress { job, t, total });
         };
-        let res = engine.play_stereo(job, &l, &r, crate::ds::render::SAMPLE_RATE, from_sec, &progress);
+        let res = engine.play_stereo(job, &l, &r, crate::ds::render::SAMPLE_RATE, from_sec, loop_range, &progress);
         engine.end_job(job);
         let _ = app.emit("sing-play-done", PlayDone { job, error: res.err().map(|e| e.to_string()) });
     });
@@ -593,6 +536,201 @@ pub async fn sing_export(state: State<'_, SingState>, mix: Vec<MixPart>, path: S
         let title = sing.title();
         mix::export(Path::new(&path), &l, &r, crate::ds::render::SAMPLE_RATE, &title)?;
         Ok(path)
+    })
+    .await
+}
+
+// ---------------------------------------------------------------------------------------------
+// Projects (.musesing)
+
+use crate::project::{self, PartCfg, Project};
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RecentProject {
+    pub path: String,
+    pub title: String,
+}
+
+/// A project as the UI holds it: the project, where it is saved (None = not yet), its score's
+/// working copy and the analysis of that score.
+#[derive(Serialize)]
+pub struct OpenedProject {
+    pub project: Project,
+    pub path: Option<String>,
+    pub score_path: String,
+    pub analysis: Analysis,
+    /// Folder to propose for saving and exporting.
+    pub default_dir: String,
+}
+
+fn cache_dir(app: &tauri::AppHandle) -> Result<PathBuf> {
+    app.path().app_cache_dir().map_err(|e| Error::Other(format!("cartella cache: {e}")))
+}
+
+fn remember_project(app: &tauri::AppHandle, path: &str, title: &str) {
+    let mut prefs = load_prefs(app);
+    prefs.recent_projects.retain(|p| p.path != path);
+    prefs.recent_projects.insert(0, RecentProject { path: path.to_string(), title: title.to_string() });
+    prefs.recent_projects.truncate(10);
+    save_prefs(app, &prefs);
+}
+
+fn fresh_parts(a: &Analysis) -> Vec<PartCfg> {
+    a.parts
+        .iter()
+        .filter(|p| p.sung)
+        .map(|p| PartCfg { name: p.name.clone(), sing: true, singer: String::new(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false })
+        .collect()
+}
+
+fn parent_dir(p: &Path) -> String {
+    p.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// New project from a MuseScore file (singers are filled in by the UI from the saved choices).
+#[tauri::command]
+pub async fn project_new(app: tauri::AppHandle, mscz: String) -> Result<OpenedProject> {
+    blocking(move || {
+        let src = PathBuf::from(&mscz);
+        let bytes = std::fs::read(&src)?;
+        let wc = project::working_copy(&cache_dir(&app)?, &bytes)?;
+        let analysis = analysis_of(&wc, &src)?;
+        let instruments = analysis.parts.iter().any(|p| !p.sung);
+        let project = Project::new(&analysis.title, &analysis.file_name, analysis.lang, fresh_parts(&analysis), instruments);
+        Ok(OpenedProject { project, path: None, score_path: wc.to_string_lossy().into_owned(), analysis, default_dir: parent_dir(&src) })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn project_open(app: tauri::AppHandle, path: String) -> Result<OpenedProject> {
+    blocking(move || {
+        let p = PathBuf::from(&path);
+        let (project, bytes) = project::open(&p)?;
+        let wc = project::working_copy(&cache_dir(&app)?, &bytes)?;
+        let display = p.with_file_name(if project.score_name.is_empty() { "partitura.mscz" } else { &project.score_name });
+        let analysis = analysis_of(&wc, &display)?;
+        remember_project(&app, &path, &project.title);
+        Ok(OpenedProject { project, path: Some(path), score_path: wc.to_string_lossy().into_owned(), analysis, default_dir: parent_dir(&p) })
+    })
+    .await
+}
+
+/// Saves the project with its score; returns the path written (with the .musesing extension).
+#[tauri::command]
+pub async fn project_save(app: tauri::AppHandle, path: String, project: Project, score_path: String) -> Result<String> {
+    blocking(move || {
+        let mut p = PathBuf::from(&path);
+        if p.extension().and_then(|e| e.to_str()) != Some(project::EXTENSION) {
+            p.set_extension(project::EXTENSION);
+        }
+        let score = std::fs::read(&score_path)?;
+        project::save(&p, &project, &score)?;
+        let out = p.to_string_lossy().into_owned();
+        remember_project(&app, &out, &project.title);
+        Ok(out)
+    })
+    .await
+}
+
+/// Replaces the project's score with a newer version of the .mscz, keeping the settings of the
+/// parts that are still there.
+#[tauri::command]
+pub async fn project_reload_score(app: tauri::AppHandle, project: Project, mscz: String) -> Result<OpenedProject> {
+    blocking(move || {
+        let src = PathBuf::from(&mscz);
+        let bytes = std::fs::read(&src)?;
+        let wc = project::working_copy(&cache_dir(&app)?, &bytes)?;
+        let analysis = analysis_of(&wc, &src)?;
+        let mut project = project;
+        project.parts = project::merge_parts(&project.parts, fresh_parts(&analysis));
+        project.score_name = analysis.file_name.clone();
+        Ok(OpenedProject { project, path: None, score_path: wc.to_string_lossy().into_owned(), analysis, default_dir: parent_dir(&src) })
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn project_recent(app: tauri::AppHandle) -> Vec<RecentProject> {
+    load_prefs(&app).recent_projects.into_iter().filter(|p| Path::new(&p.path).is_file()).collect()
+}
+
+#[derive(Serialize)]
+pub struct RollNote {
+    pub start: f64,
+    pub end: f64,
+    pub pitch: i32,
+    pub lyric: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct RollPart {
+    pub name: String,
+    pub sung: bool,
+    pub notes: Vec<RollNote>,
+}
+
+/// Every part's notes in seconds (repeats unrolled, at `tempo_factor`), for the score roll.
+#[tauri::command]
+pub async fn score_roll(score_path: String, tempo_factor: f64) -> Result<Vec<RollPart>> {
+    blocking(move || {
+        let score = read_mscz(Path::new(&score_path))?;
+        let ticks = |b: crate::score::Beats| *b.numer() as f64 / *b.denom() as f64 * crate::ustx::TICKS as f64;
+        let tempos: Vec<(i64, f64)> =
+            score.tempos.iter().map(|(b, q)| (ticks(*b).round() as i64, q * 60.0 * tempo_factor.clamp(0.25, 2.0))).collect();
+        let axis = crate::ds::time::TimeAxis::new(&tempos, crate::ustx::TICKS);
+        let sec = |b: crate::score::Beats| axis.tick_to_ms(ticks(b)) / 1000.0;
+        Ok(score
+            .parts
+            .iter()
+            .filter(|p| !p.notes.is_empty())
+            .map(|p| RollPart {
+                name: p.name.clone(),
+                sung: p.is_sung(),
+                notes: p
+                    .notes
+                    .iter()
+                    .map(|n| RollNote { start: sec(n.start), end: sec(n.start + n.dur), pitch: n.pitch, lyric: n.lyric.as_ref().map(|l| l.text.clone()) })
+                    .collect(),
+            })
+            .collect())
+    })
+    .await
+}
+
+fn file_safe(s: &str) -> String {
+    s.chars().map(|c| if "/\\:*?\"<>|".contains(c) { '-' } else { c }).collect::<String>().trim().to_string()
+}
+
+/// Practice tracks: one file per sung part, with that part as mixed and the others lowered by
+/// `others_db` (the accompaniment stays as mixed). Returns the files written.
+#[tauri::command]
+pub async fn sing_export_guides(state: State<'_, SingState>, mix: Vec<MixPart>, dir: String, ext: String, others_db: f32) -> Result<Vec<String>> {
+    let sing = state.0.clone();
+    blocking(move || {
+        let title = file_safe(&sing.title());
+        let names: Vec<String> = sing.with_tracks(|t| t.iter().map(|(n, _)| n.clone()).collect())?;
+        let mut written = vec![];
+        for name in names.iter().filter(|n| n.as_str() != project::ACCOMPANIMENT) {
+            let parts: Vec<MixPart> = mix
+                .iter()
+                .map(|p| {
+                    let mut p = p.clone();
+                    p.solo = false;
+                    if &p.name == name {
+                        p.mute = false;
+                    } else if p.name != project::ACCOMPANIMENT {
+                        p.volume_db += others_db;
+                    }
+                    p
+                })
+                .collect();
+            let (l, r) = sing.with_tracks(|t| mix::mix(t, &parts))?;
+            let path = Path::new(&dir).join(format!("{title} - {}.{ext}", file_safe(name)));
+            mix::export(&path, &l, &r, crate::ds::render::SAMPLE_RATE, &format!("{} ({name})", sing.title()))?;
+            written.push(path.to_string_lossy().into_owned());
+        }
+        Ok(written)
     })
     .await
 }

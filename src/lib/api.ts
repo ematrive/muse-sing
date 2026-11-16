@@ -39,21 +39,49 @@ export type SingersList = {
   /** Saved singer per part name (lowercase). */
   parts: Record<string, PartPref>;
 };
-export type GenerateResult = { output: string; tracks: number; notes: number };
-
 export const api = {
   analyze: (path: string) => invoke<Analysis>("analyze", { path }),
   listSingers: () => invoke<SingersList>("list_singers"),
-  generate: (req: { path: string; output: string; lang: Lang; singer: string; parts: string[]; part_singers: Record<string, string> }) =>
-    invoke<GenerateResult>("generate", { req }),
+};
+
+// --- projects (.musesing) ----------------------------------------------------------------------
+
+export type PartCfg = { name: string; sing: boolean; singer: string; color: string | null; volume_db: number; pan: number; mute: boolean; solo: boolean };
+export type AccompCfg = { enabled: boolean; volume_db: number; pan: number; mute: boolean; solo: boolean };
+export type Project = {
+  version: number;
+  title: string;
+  score_name: string;
+  lang: Lang;
+  pitch: PitchMode;
+  tempo_factor: number;
+  parts: PartCfg[];
+  accompaniment: AccompCfg;
+  edits: Record<string, unknown>;
+};
+/** A project as held by the UI: `path` null = never saved; `score_path` = working copy of the score. */
+export type OpenedProject = { project: Project; path: string | null; score_path: string; analysis: Analysis; default_dir: string };
+export type RecentProject = { path: string; title: string };
+export type RollNote = { start: number; end: number; pitch: number; lyric: string | null };
+export type RollPart = { name: string; sung: boolean; notes: RollNote[] };
+/** Name of the accompaniment track in the mix (project.rs ACCOMPANIMENT). */
+export const ACCOMPANIMENT = "Accompagnamento";
+
+export const projectApi = {
+  create: (mscz: string) => invoke<OpenedProject>("project_new", { mscz }),
+  open: (path: string) => invoke<OpenedProject>("project_open", { path }),
+  save: (path: string, project: Project, scorePath: string) => invoke<string>("project_save", { path, project, scorePath }),
+  reloadScore: (project: Project, mscz: string) => invoke<OpenedProject>("project_reload_score", { project, mscz }),
+  recent: () => invoke<RecentProject[]>("project_recent"),
+  roll: (scorePath: string, tempoFactor: number) => invoke<RollPart[]>("score_roll", { scorePath, tempoFactor }),
 };
 
 // --- sung audio (Muse Sing's DiffSinger engine) --------------------------------------------------
 
 export type PitchMode = "model" | "notes";
 export type RenderPart = { name: string; singer: string; color: string | null };
-export type RenderRequest = { path: string; lang: Lang; pitch: PitchMode; parts: RenderPart[] };
-export type MixPart = { name: string; volume_db: number; pan: number; mute: boolean };
+export type RenderRequest = { path: string; lang: Lang; pitch: PitchMode; parts: RenderPart[]; tempo_factor: number; accompaniment: boolean };
+export type MixPart = { name: string; volume_db: number; pan: number; mute: boolean; solo: boolean };
 export type SingProgress = { job: number; part: string; index: number; parts: number; phrase: number; phrases: number; cached: boolean };
 export type SingDone = { job: number; error: string | null; cancelled: boolean; warnings: string[]; seconds: number };
 export type PlayProgress = { job: number; t: number; total: number };
@@ -63,9 +91,12 @@ export type PlayDone = { job: number; error: string | null };
 export const singApi = {
   start: (req: RenderRequest) => invoke<number>("sing_start", { req }),
   cancel: () => invoke<void>("sing_cancel"),
-  play: (mix: MixPart[], fromSec: number) => invoke<number>("sing_play", { mix, fromSec }),
+  play: (mix: MixPart[], fromSec: number, loopRange: [number, number] | null) => invoke<number>("sing_play", { mix, fromSec, loopRange }),
   stop: () => invoke<void>("sing_stop"),
   export: (mix: MixPart[], path: string) => invoke<string>("sing_export", { mix, path }),
+  /** One file per sung part, that part in front and the others lowered by `othersDb`. */
+  exportGuides: (mix: MixPart[], dir: string, ext: string, othersDb: number) =>
+    invoke<string[]>("sing_export_guides", { mix, dir, ext, othersDb }),
 };
 
 export const LANGS: Record<Lang, string> = { it: "Italiano", en: "English" };

@@ -2,6 +2,20 @@
 
 Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'intestazione dell'app, accanto a «Manuale».
 
+## Non ancora rilasciato
+
+### Nuovo
+- **Progetti Muse Sing (`.musesing`):** ogni brano si salva con la partitura, i cantanti, il mix e le impostazioni, e si riapre (anche da «progetti recenti» o trascinandolo nella finestra). Si può spostare o mandare a qualcuno. «Ricarica partitura» aggiorna il `.mscz` tenendo le scelte; avviso prima di perdere modifiche non salvate.
+- **Accompagnamento:** le parti senza testo (organo, pianoforte) suonano con un suono d'organo, con il loro volume, pan, muta e solo.
+- **Velocità per studiare:** 90%, 80%, 70% o 60% del tempo scritto, per voci e accompagnamento.
+- **Rullo con tutte le voci:** note e sillabe di ogni parte che scorrono durante l'ascolto, con «la mia voce» evidenziata; clic per spostarsi.
+- **Ripeti un tratto:** trascinando sul righello del rullo l'ascolto ripete quel tratto.
+- **Solo** per ogni traccia.
+- **Basi di studio:** un MP3 per ogni voce, con quella voce in primo piano e le altre più basse.
+
+### Tolto
+- Il file `.ustx` per OpenUtau: Muse Sing fa tutto da solo. I cantanti si possono tenere nella cartella di Muse Sing.
+
 ## 0.5.0 — 16 novembre 2026
 
 Da questa versione Muse Sing funziona solo sui Mac con processore Apple (M1 o successivi): il motore che fa cantare non esiste per i Mac Intel, che restano alla 0.4.0.

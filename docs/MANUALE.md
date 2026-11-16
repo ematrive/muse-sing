@@ -4,45 +4,29 @@ Muse Sing fa cantare una partitura MuseScore: le voci cantano davvero le parole,
 
 L'app ha tre schede:
 
-- **Canta una partitura:** genera l'audio cantato (un cantante per ogni voce) da ascoltare o esportare in MP3, FLAC o WAV. Se vuoi ritoccare la pronuncia in OpenUtau, crea anche il file `.ustx`.
+- **Canta una partitura:** crea un progetto da una partitura, genera l'audio cantato (un cantante per ogni voce, più l'accompagnamento), lo fa ascoltare con il rullo delle note e lo esporta in MP3, FLAC o WAV, anche come basi di studio per ogni voce.
 - **Registra un cantante:** raccoglie le registrazioni per costruire un cantante italiano con la voce di un corista.
 - **Manuale:** questa guida e le novità di ogni versione.
 
 ## Prima di iniziare
 
-Servono tre cose, da installare una volta sola.
+Servono due cose, da installare una volta sola: un cantante e Muse Sing. OpenUtau non serve più.
 
-### 1. OpenUtau
-
-Muse Sing canta da solo: OpenUtau serve solo se vuoi ritoccare un brano a mano (fonemi, curve) con il file `.ustx`, ed è il posto più comodo dove installare i cantanti.
-
-1. Scarica il `.dmg` per macOS dall'ultima versione su https://github.com/stakira/OpenUtau/releases.
-2. Trascina OpenUtau in Applicazioni.
-3. Al primo avvio macOS dice che è «danneggiato». Apri il Terminale e scrivi:
-
-   ```
-   xattr -cr /Applications/OpenUtau.app
-   ```
-
-4. Apri OpenUtau una volta e chiudilo: così crea la sua cartella `~/Library/OpenUtau`.
-
-### 2. I cantanti (voicebank)
+### 1. Il cantante (voicebank)
 
 Per ora Muse Sing usa **TIGER DS v106**, che canta sia in italiano sia in inglese: https://github.com/spicytigermeat/tiger_diffsinger/releases/download/v106/TIGER_DS_v106_PACK.zip
 
-Nel pacchetto c'è un secondo zip dentro `Voice Library/`: è quello da decomprimere. Installalo a mano dal Terminale (il trascinamento dentro OpenUtau a volte chiede una codifica e poi non fa nulla):
+Nel pacchetto c'è un secondo zip dentro `Voice Library/`: è quello da decomprimere, nella cartella dei cantanti di Muse Sing. Dal Terminale:
 
 ```
-mkdir -p ~/Library/OpenUtau/Singers/Tiger
-cd ~/Library/OpenUtau/Singers/Tiger
+mkdir -p ~/Library/Application\ Support/app.musesing.desktop/Singers/Tiger
+cd ~/Library/Application\ Support/app.musesing.desktop/Singers/Tiger
 unzip ~/Downloads/TIGER_DS_v106.zip
 ```
 
-Riapri OpenUtau e controlla in **Strumenti → Cantanti** che i cantanti compaiano.
+Poi in Muse Sing premi «aggiorna cantanti». Muse Sing trova i cantanti anche nella cartella di OpenUtau (`~/Library/OpenUtau/Singers`), se c'è ancora; se ne sposti uno da lì alla cartella di Muse Sing, i progetti lo ritrovano da soli.
 
-Muse Sing legge i cantanti dalla cartella di OpenUtau. Un cantante che vuoi usare solo in Muse Sing (per esempio quello costruito con la scheda Registra) va invece in `~/Library/Application Support/app.musesing.desktop/Singers`.
-
-### 3. Muse Sing
+### 2. Muse Sing
 
 Serve un Mac con processore Apple (M1 o successivi): sui Mac Intel funziona solo fino alla versione 0.4.0.
 
@@ -57,32 +41,45 @@ Serve un Mac con processore Apple (M1 o successivi): sui Mac Intel funziona solo
 
 ## Canta una partitura
 
-1. Apri la scheda **Canta una partitura**.
-2. **Trascina** il file `.mscz` nella finestra, oppure clicca e sceglilo. Compaiono titolo, metro, tempo, durata e l'elenco delle voci con le prime parole.
-3. Controlla la **lingua**: viene riconosciuta da sola, ma puoi cambiarla.
-4. Scegli l'**intonazione**:
-   - **naturale:** il cantante decide come attaccare e legare le note, con un po' di vibrato. Suona più umano;
-   - **esatta:** la voce sta ferma sulle note scritte. Utile per controllare l'intonazione della propria parte.
-5. Spunta le **voci da cantare** e scegli il **cantante** di ognuna. Se il cantante ha più colori di voce (Tiger ne ha diversi), accanto compare la scelta del colore. Muse Sing ricorda il cantante di ogni voce (Soprano, Tenore…) da un brano all'altro.
-6. Premi **Genera audio**. Il Mac calcola le voci una dopo l'altra: per un brano di 3-4 minuti con quattro voci servono alcuni minuti. Puoi annullare; la frase in corso finisce prima di fermarsi.
-7. Premi **Ascolta**. Con la barra scegli da dove partire.
-8. Regola il **mix** di ogni voce: volume, posizione a sinistra o a destra (pan), «muta» per escluderla. Le modifiche si sentono subito, senza rigenerare: per esempio alza la tua voce o muta le altre. Doppio clic su un cursore lo riporta a zero.
-9. Premi **Esporta…** e scegli il formato: MP3 (per il telefono), FLAC (senza perdita di qualità) o WAV.
+Ogni brano diventa un **progetto** (file `.musesing`): contiene una copia della partitura, i cantanti scelti, il mix e le altre impostazioni. Puoi spostarlo o mandarlo a qualcuno: si apre anche senza il `.mscz` originale. L'audio generato non è nel file, ma Muse Sing lo ricorda: riaprendo il progetto, «Genera audio» riusa le voci già calcolate.
 
-Le voci già generate con lo stesso cantante e la stessa partitura vengono riusate: se cambi il cantante di una sola voce, si rigenera solo quella. Se cambi voci, cantanti, lingua o intonazione dopo aver generato, Muse Sing chiede di generare di nuovo.
+### Creare e salvare un progetto
+
+1. Apri la scheda **Canta una partitura**.
+2. **Trascina** il file `.mscz` nella finestra, oppure premi **Nuovo da partitura…**. Compaiono titolo, metro, tempo, durata, le voci e il rullo con le note di tutte le parti.
+3. Premi **Salva** (⌘S) e scegli dove mettere il progetto. **Salva con nome…** (⇧⌘S) ne fa una copia.
+4. Per riaprirlo: trascina il `.musesing` nella finestra, premi **Apri progetto…** o sceglilo tra i **progetti recenti** nella pagina iniziale.
+
+Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo ricorda prima di chiudere o di aprire un altro progetto.
+
+**Partitura corretta in MuseScore?** Premi **Ricarica partitura…** e scegli il `.mscz` aggiornato: le scelte delle voci che ci sono ancora restano, poi genera di nuovo.
+
+### Voci, cantanti e impostazioni
+
+- **Lingua:** viene riconosciuta da sola, ma puoi cambiarla.
+- **Intonazione:**
+  - **naturale:** il cantante decide come attaccare e legare le note, con un po' di vibrato. Suona più umano;
+  - **esatta:** la voce sta ferma sulle note scritte. Utile per controllare l'intonazione della propria parte.
+- **Velocità:** 100% è il tempo scritto; 90%, 80%, 70% o 60% rallentano tutto il brano (voci e accompagnamento) per studiare i passaggi difficili. Cambiare la velocità richiede di generare di nuovo; ogni velocità resta in memoria.
+- **Voci:** spunta quelle da cantare e scegli il **cantante** di ognuna. Se il cantante ha più colori di voce (Tiger ne ha diversi), accanto compare la scelta del colore. Muse Sing ricorda il cantante di ogni voce (Soprano, Tenore…) da un brano all'altro.
+- **La mia voce:** il pulsante accanto al nome evidenzia quella voce nel rullo.
+- **Accompagnamento:** se la partitura ha parti senza testo (organo, pianoforte), Muse Sing le suona con un suono d'organo semplice. Si attiva o disattiva con la casella.
+
+### Generare e ascoltare
+
+1. Premi **Genera audio**. Il Mac calcola le voci una dopo l'altra: per un brano di 3-4 minuti con quattro voci servono alcuni minuti. Puoi annullare; la frase in corso finisce prima di fermarsi.
+2. Premi **Ascolta**. Con la barra o con un clic sul rullo scegli da dove partire; durante l'ascolto il rullo scorre con la linea rossa.
+3. **Ripetere un tratto:** trascina sul righello in cima al rullo (i minuti) per scegliere un tratto, che si colora di giallo: l'ascolto lo ripete finché non premi Ferma. La × accanto al tratto, sopra, lo toglie.
+4. **Mix** di ogni voce e dell'accompagnamento: volume, posizione a sinistra o a destra (pan), «muta» per escluderla, «solo» per sentire solo le tracce con «solo» acceso. Le modifiche si sentono subito, senza rigenerare. Doppio clic su un cursore lo riporta a zero.
+
+Le voci già generate con le stesse scelte vengono riusate: se cambi il cantante di una sola voce, si rigenera solo quella. Se cambi voci, cantanti, lingua, intonazione o velocità dopo aver generato, Muse Sing chiede di generare di nuovo.
 
 **Avvisi di pronuncia.** Sotto il lettore, «avvisi di pronuncia» elenca le parole che il cantante non sa dire del tutto (un suono che non ha). Di solito la parola si sente lo stesso, con quel suono saltato.
 
-### Progetto OpenUtau (.ustx)
+### Esportare
 
-Per ritoccare fonemi e curve, premi **Crea .ustx** nel riquadro in basso e scegli dove salvarlo. Ogni voce usa il cantante scelto sopra.
-
-### Ascoltare in OpenUtau
-
-1. In OpenUtau, **File → Apri** e scegli il `.ustx`.
-2. Premi Play. La prima volta OpenUtau calcola le voci e ci mette qualche secondo.
-3. Ogni voce è una traccia: puoi silenziarla o ascoltarla da sola, per esempio per studiare la tua parte.
-4. Per avere un file audio usa il menu di esportazione di OpenUtau (File → Esporta).
+- **Esporta…:** il brano con il mix che senti, in MP3 (per il telefono), FLAC (senza perdita di qualità) o WAV.
+- **Basi di studio…:** scegli una cartella e Muse Sing crea un MP3 per ogni voce (*Santo - Soprano.mp3*, *Santo - Contralto.mp3*…), con quella voce in primo piano e le altre più basse (di quanto, lo scegli accanto: −10 dB è un buon inizio). L'accompagnamento resta come nel mix. Sono le classiche basi da mandare al coro.
 
 ### Ritornelli e salti
 
@@ -117,14 +114,14 @@ Il riquadro giallo elenca ciò che Muse Sing non gestisce del tutto:
 - **Italiano:**
   - la doppia «r» è sempre vibrante (*terra*);
   - la «i» semiconsonante è scritta in modo esplicito (*pietà*, *cieli*, *pieni*);
-  - *Dio*, *mio* e simili hanno la «i» piena.
-  - Le altre parole le converte OpenUtau.
-- **Inglese:** usa il phonemizer DIFFS EN+, con correzioni per le forme arcaiche (*ask'd*, *feel'st*, *couldst*).
-- **Correggere una parola in OpenUtau:** scrivi la pronuncia tra parentesi quadre nella nota, per esempio `terra[t e rr a]`.
+  - *Dio*, *mio* e simili hanno la «i» piena;
+  - le altre parole vengono dal dizionario italiano o, se mancano, da un modello che ne indovina la pronuncia.
+- **Inglese:** dizionario ARPAbet+, con correzioni per le forme arcaiche (*ask'd*, *feel'st*, *couldst*).
+- La correzione di una parola dentro Muse Sing arriverà con l'editor di pronuncia, in una prossima versione.
 
 ## Registra un cantante
 
-Questa scheda serve a costruire un cantante italiano con la voce di un corista. Si registrano circa **un'ora di frasi per ogni voce**: per esempio una femminile e una maschile. Con le registrazioni si addestra poi un modello DiffSinger da installare in OpenUtau come gli altri cantanti.
+Questa scheda serve a costruire un cantante italiano con la voce di un corista. Si registrano circa **un'ora di frasi per ogni voce**: per esempio una femminile e una maschile. Con le registrazioni si addestra poi un modello DiffSinger da copiare nella cartella dei cantanti di Muse Sing.
 
 ### Cosa serve
 
@@ -231,7 +228,7 @@ takes.json     le frasi registrate
 wavs/          un file WAV per frase
 ```
 
-Apri la cartella dall'icona in alto a sinistra e mandala intera a chi prepara il cantante. Seguono l'etichettatura automatica, l'addestramento su una GPU in affitto e il pacchetto da installare in OpenUtau. Queste fasi non sono ancora nell'app.
+Apri la cartella dall'icona in alto a sinistra e mandala intera a chi prepara il cantante. Seguono l'etichettatura automatica, l'addestramento su una GPU in affitto e il pacchetto da copiare nella cartella dei cantanti di Muse Sing. Queste fasi non sono ancora nell'app.
 
 ## Problemi comuni
 
@@ -242,19 +239,17 @@ Apri la cartella dall'icona in alto a sinistra e mandala intera a chi prepara il
 xattr -cr "/Applications/Muse Sing.app"
 ```
 
-Lo stesso vale per OpenUtau.
-
 **Nessun cantante nell'elenco.**
-Controlla che i cantanti siano in `~/Library/OpenUtau/Singers` e che OpenUtau li veda, poi premi «aggiorna cantanti» in Muse Sing.
+Controlla che il cantante sia decompresso in `~/Library/Application Support/app.musesing.desktop/Singers` (in una sua cartella, con il file `character.txt`), poi premi «aggiorna cantanti».
 
-**Accanto al cantante c'è scritto «solo .ustx».**
-Muse Sing non può usare quel cantante per generare l'audio: il motivo è scritto sotto la voce (di solito richiede parti del motore non ancora supportate). Puoi comunque usarlo nel `.ustx` con OpenUtau.
+**Accanto al cantante c'è scritto «non supportato».**
+Muse Sing non può usare quel cantante: il motivo è scritto sotto la voce (di solito richiede parti del motore non ancora supportate).
 
 **«Genera audio» è lento.**
 Il calcolo usa il processore del Mac e dura circa quanto il brano, per ogni voce. La seconda volta le voci già generate sono pronte subito.
 
 **Il cantante pronuncia male una parola.**
-Controlla che non sia un refuso nella partitura. Poi correggila in OpenUtau con la pronuncia tra parentesi quadre (vedi «Pronuncia»).
+Controlla che non sia un refuso nella partitura. Puoi anche scrivere la pronuncia tra parentesi quadre nel testo della nota in MuseScore, per esempio `terra[t e rr a]`, e ricaricare la partitura; l'editor di pronuncia dentro Muse Sing arriverà in una prossima versione.
 
 **Le voci non partono insieme o il brano è troppo corto.**
 Controlla gli avvisi gialli. Se nella partitura ci sono ritornelli o salti scritti in modo insolito, segnalalo con il file `.mscz`.

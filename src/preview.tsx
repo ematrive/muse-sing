@@ -105,6 +105,47 @@ const sing = (() => {
   };
 })();
 
+// --- fake projects: built from the analysis of the preview score -----------------------------------
+type PAnalysis = { title: string; file_name: string; lang: string; duration_sec: number; parts: { name: string; sung: boolean; notes: number }[] };
+function opened(path: string | null) {
+  const an = (q.get("song") === "sonnet" ? sonnet : santo) as PAnalysis | undefined;
+  if (!an) throw "Anteprima senza partiture: mancano src/preview-santo.json e src/preview-sonnet.json";
+  const parts = an.parts
+    .filter((p) => p.sung)
+    .map((p) => ({ name: p.name, sing: true, singer: "", color: null, volume_db: 0, pan: 0, mute: false, solo: false }));
+  return {
+    project: {
+      version: 1,
+      title: an.title,
+      score_name: an.file_name,
+      lang: an.lang,
+      pitch: "model",
+      tempo_factor: 1,
+      parts,
+      accompaniment: { enabled: an.parts.some((p) => !p.sung), volume_db: -6, pan: 0, mute: false, solo: false },
+      edits: {},
+    },
+    path,
+    score_path: "/tmp/cache/projects/0123.mscz",
+    analysis: an,
+    default_dir: "/Users/utente/Music",
+  };
+}
+function roll() {
+  const an = (q.get("song") === "sonnet" ? sonnet : santo) as PAnalysis;
+  const syl = ["san", "to", "si", "gno", "re", "dio", "del", "l'u", "ni", "ver", "so"];
+  return an.parts.map((p, i) => {
+    const notes = [];
+    let t = 0;
+    for (let k = 0; t < an.duration_sec; k++) {
+      const d = [0.5, 1, 1.5, 0.75][(k + i) % 4];
+      notes.push({ start: t, end: t + d * 0.95, pitch: 72 - i * 6 + ((k * 7 + i * 3) % 9) - 4, lyric: p.sung ? syl[k % syl.length] : null });
+      t += d;
+    }
+    return { name: p.name, sung: p.sung, notes };
+  });
+}
+
 setInterval(() => emit("audio-level", 0.05 + Math.random() * 0.25), 50);
 // for UI checks: inject events and look at the commands sent
 const w = window as unknown as { __emit: typeof emit; __calls: [string, unknown][] };
@@ -144,11 +185,17 @@ mockIPC(
     if (cmd === "sing_start") return sing.start(a.req as unknown as { parts: { name: string }[] });
     if (cmd === "sing_cancel") return sing.cancel();
     if (cmd === "sing_play") return sing.play(a.fromSec);
+    if (cmd === "sing_export_guides") return ["/Users/utente/Music/Santo - Soprano.mp3", "/Users/utente/Music/Santo - Contralto.mp3"];
+    if (cmd === "project_new" || cmd === "project_open") return opened(cmd === "project_open" ? "/Users/utente/Music/Santo.musesing" : null);
+    if (cmd === "project_save") return String(a.path).endsWith(".musesing") ? a.path : `${a.path}.musesing`;
+    if (cmd === "project_reload_score") return opened(null);
+    if (cmd === "project_recent") return [{ path: "/Users/utente/Music/Santo.musesing", title: "Santo" }];
+    if (cmd === "score_roll") return roll();
+    if (cmd === "plugin:dialog|ask") return true;
     if (cmd === "sing_stop") return sing.stop();
     if (cmd === "sing_export") return a.path;
-    if (cmd === "generate") return { output: "/Users/utente/Music/Santo.ustx", tracks: 3, notes: 275 };
     if (cmd === "plugin:dialog|open") return "/Users/utente/Music/Santo.mscz";
-    if (cmd === "plugin:dialog|save") return "/Users/utente/Music/Santo.ustx";
+    if (cmd === "plugin:dialog|save") return "/Users/utente/Music/Santo.musesing";
     if (cmd === "voice_recent") return [{ dir: voice.dir, name: voice.profile.name }];
     if (cmd === "voice_open" || cmd === "voice_create") return voice;
     if (cmd === "plugin:updater|check") return null;

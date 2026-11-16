@@ -15,6 +15,9 @@ pub struct MixPart {
     /// -1 = left, 0 = centre, 1 = right.
     pub pan: f32,
     pub mute: bool,
+    /// When any part is soloed, only the soloed ones play.
+    #[serde(default)]
+    pub solo: bool,
 }
 
 /// Highest peak of the exported mix: below full scale, so MP3 decoding doesn't clip.
@@ -26,9 +29,10 @@ const PEAK: f32 = 0.95;
 pub fn mix(tracks: &[(String, &[f32])], parts: &[MixPart]) -> (Vec<f32>, Vec<f32>) {
     let len = tracks.iter().map(|(_, t)| t.len()).max().unwrap_or(0);
     let (mut l, mut r) = (vec![0f32; len], vec![0f32; len]);
+    let any_solo = parts.iter().any(|p| p.solo);
     for (name, samples) in tracks {
         let Some(p) = parts.iter().find(|p| &p.name == name) else { continue };
-        if p.mute {
+        if if any_solo { !p.solo } else { p.mute } {
             continue;
         }
         let gain = 10f32.powf(p.volume_db / 20.0);
@@ -144,7 +148,18 @@ mod tests {
     use super::*;
 
     fn part(name: &str, volume_db: f32, pan: f32, mute: bool) -> MixPart {
-        MixPart { name: name.into(), volume_db, pan, mute }
+        MixPart { name: name.into(), volume_db, pan, mute, solo: false }
+    }
+
+    #[test]
+    fn solo_wins_over_mute() {
+        let a = vec![0.1f32; 2];
+        let b = vec![0.2f32; 2];
+        let tracks = [("A".to_string(), a.as_slice()), ("B".to_string(), b.as_slice())];
+        let mut pa = part("A", 0.0, 0.0, true);
+        pa.solo = true;
+        let (l, _) = mix(&tracks, &[pa, part("B", 0.0, 0.0, false)]);
+        assert!((l[0] - 0.1).abs() < 1e-6, "only the soloed (even if muted) part plays");
     }
 
     #[test]

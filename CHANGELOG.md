@@ -2,7 +2,7 @@
 
 Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'intestazione dell'app, accanto a «Manuale».
 
-## Non ancora rilasciato
+## 0.7.0 — 16 novembre 2026
 
 ### Nuovo
 - **Progetti Muse Sing (`.musesing`):** ogni brano si salva con la partitura, i cantanti, il mix e le impostazioni, e si riapre (anche da «progetti recenti» o trascinandolo nella finestra). Si può spostare o mandare a qualcuno. «Ricarica partitura» aggiorna il `.mscz` tenendo le scelte; avviso prima di perdere modifiche non salvate.

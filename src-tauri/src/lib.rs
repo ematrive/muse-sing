@@ -3,6 +3,7 @@ pub mod audio;
 pub mod commands;
 pub mod corpus;
 pub mod ds;
+pub mod edits;
 pub mod error;
 pub mod lyrics;
 pub mod mix;
@@ -44,6 +45,7 @@ pub fn run() {
             commands::audio_note,
             commands::sing_start,
             commands::sing_cancel,
+            commands::sing_track_info,
             commands::sing_play,
             commands::sing_stop,
             commands::sing_export,

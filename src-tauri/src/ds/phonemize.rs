@@ -16,6 +16,8 @@ use crate::lyrics::Lang;
 /// A note as the phonemizer sees it: absolute ticks, lyric with an optional `[hint]`.
 #[derive(Debug, Clone)]
 pub struct PNote {
+    /// Stable id of the score note (empty when not from a score).
+    pub id: String,
     pub position: i64,
     pub duration: i64,
     pub tone: i32,
@@ -517,6 +519,61 @@ pub fn phonemize(vb: &Voicebank, lang: Lang, notes: &[PNote], axis: &TimeAxis, s
     Ok(Phonemized { phones, groups, warnings })
 }
 
+/// The phonemes a singer can sing in a language (symbol, is a vowel), for the editor.
+pub fn singer_phonemes(vb: &Voicebank, lang: Lang) -> Result<Vec<(String, bool)>> {
+    let dur = vb.duration()?;
+    let lg = LangG2p::load(dur, lang)?;
+    let mut out: Vec<(String, bool)> = dur
+        .tokens
+        .keys()
+        .filter(|t| !matches!(t.as_str(), "SP" | "AP" | "<PAD>") && lg.g2p.is_valid_symbol(t))
+        .map(|t| (t.clone(), lg.g2p.is_vowel(t)))
+        .collect();
+    out.sort();
+    Ok(out)
+}
+
+/// Shortest phoneme left by a timing edit, in ticks.
+const MIN_PHONE_TICKS: i64 = 10;
+
+/// Moves phoneme starts by the edits in ms (`offsets`: id of a word's first note → shift of
+/// each of its phonemes). A word whose phoneme count changed is left alone; phonemes keep their
+/// order and a minimum length.
+pub fn shift_phonemes(ph: &mut Phonemized, notes: &[PNote], axis: &TimeAxis, offsets: &HashMap<String, Vec<f64>>) {
+    if offsets.is_empty() {
+        return;
+    }
+    let n = ph.phones.len();
+    let touching: Vec<bool> = (0..n).map(|i| i + 1 < n && ph.phones[i].end == ph.phones[i + 1].position).collect();
+    let mut i = 0;
+    while i < n {
+        let g = ph.phones[i].group;
+        let j = (i..n).find(|&k| ph.phones[k].group != g).unwrap_or(n);
+        let id = &notes[ph.groups[g][0]].id;
+        if let Some(off) = offsets.get(id).filter(|o| o.len() == j - i) {
+            for (k, &o) in (i..j).zip(off) {
+                if o == 0.0 {
+                    continue;
+                }
+                let p = &ph.phones[k];
+                let want = axis.ms_to_tick(axis.tick_to_ms(p.position as f64) + o);
+                let lo = if k > 0 { ph.phones[k - 1].position + MIN_PHONE_TICKS } else { i64::MIN };
+                let hi = p.end - MIN_PHONE_TICKS;
+                ph.phones[k].position = want.min(hi).max(lo);
+            }
+        }
+        i = j;
+    }
+    for k in 0..n {
+        let group_end = notes[*ph.groups[ph.phones[k].group].last().unwrap()].end();
+        ph.phones[k].end = match ph.phones.get(k + 1).map(|p| p.position) {
+            Some(next) if touching[k] => next,
+            Some(next) => next.min(group_end),
+            None => group_end,
+        };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,7 +582,7 @@ mod tests {
     fn hints_and_groups() {
         assert_eq!(split_hint("pietà[p y e t a]"), ("pietà".into(), Some("p y e t a".into())));
         assert_eq!(split_hint("forty"), ("forty".into(), None));
-        let n = |p, d, l: &str| PNote { position: p, duration: d, tone: 60, lyric: l.into() };
+        let n = |p, d, l: &str| PNote { id: String::new(), position: p, duration: d, tone: 60, lyric: l.into() };
         let notes = vec![n(0, 480, "forty"), n(480, 480, "+"), n(960, 480, "+~"), n(1920, 480, "win"), n(2400, 480, "+")];
         assert_eq!(groups(&notes), vec![vec![0, 1, 2], vec![3, 4]]);
     }
@@ -535,6 +592,27 @@ mod tests {
         assert_eq!(durations_ms_to_frames(&[11.6, 11.6, 11.6], 11.61).unwrap(), vec![1, 1, 1]);
         let f = durations_ms_to_frames(&[100.0, 250.0, 33.0], 512.0 * 1000.0 / 44100.0).unwrap();
         assert_eq!(f.iter().sum::<i32>(), ((383.0 / (512.0 * 1000.0 / 44100.0)) + 0.5_f64).round() as i32);
+    }
+
+    #[test]
+    fn phoneme_shifts_stay_ordered() {
+        let axis = TimeAxis::new(&[(0, 125.0)], 480); // 1 tick = 1 ms
+        let note = |id: &str, p, d| PNote { id: id.into(), position: p, duration: d, tone: 60, lyric: "x".into() };
+        let notes = vec![note("a", 0, 500), note("b", 500, 500)];
+        let ph = |s: &str, p, e, g| Phone { symbol: s.into(), position: p, end: e, group: g };
+        let mut x = Phonemized {
+            phones: vec![ph("p", -60, 0, 0), ph("a", 0, 440, 0), ph("t", 440, 500, 1), ph("o", 500, 1000, 1)],
+            groups: vec![vec![0], vec![1]],
+            warnings: vec![],
+        };
+        let offsets = HashMap::from([("b".to_string(), vec![-40.0, 600.0])]);
+        shift_phonemes(&mut x, &notes, &axis, &offsets);
+        let pos: Vec<(i64, i64)> = x.phones.iter().map(|p| (p.position, p.end)).collect();
+        assert_eq!(pos, vec![(-60, 0), (0, 400), (400, 990), (990, 1000)]);
+        // a word with a different number of phonemes is not touched
+        let before = x.phones.clone();
+        shift_phonemes(&mut x, &notes, &axis, &HashMap::from([("a".to_string(), vec![10.0])]));
+        assert_eq!(x.phones, before);
     }
 
     #[test]

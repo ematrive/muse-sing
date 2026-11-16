@@ -72,6 +72,7 @@ mod tests {
     #[test]
     fn plays_only_the_instrumental_parts() {
         let note = |start: i64, pitch: i32, lyric: bool| Note {
+            id: format!("{start}"),
             start: Ratio::from_integer(start),
             dur: Ratio::from_integer(1),
             pitch,

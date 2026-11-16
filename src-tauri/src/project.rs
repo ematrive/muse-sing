@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::edits::PartEdits;
 use crate::error::{Error, Result};
 use crate::lyrics::Lang;
 
@@ -93,9 +94,9 @@ pub struct Project {
     pub parts: Vec<PartCfg>,
     #[serde(default)]
     pub accompaniment: AccompCfg,
-    /// Pronunciation and curve edits per part (filled by the editor; kept as-is otherwise).
+    /// Pronunciation and curve edits per part.
     #[serde(default)]
-    pub edits: HashMap<String, serde_json::Value>,
+    pub edits: HashMap<String, PartEdits>,
 }
 
 impl Project {
@@ -189,7 +190,7 @@ mod tests {
         let mut p = Project::new("Santo", "santo.mscz", Lang::It, vec![part("Soprano"), part("Basso")], true);
         p.tempo_factor = 0.8;
         p.parts[1].volume_db = -3.0;
-        p.edits.insert("Soprano".into(), serde_json::json!({"words": {"x": "y"}}));
+        p.edits.entry("Soprano".into()).or_default().words.insert("x".into(), "y".into());
         let path = dir.join("t.musesing");
         save(&path, &p, b"fake score").unwrap();
         let (back, score) = open(&path).unwrap();

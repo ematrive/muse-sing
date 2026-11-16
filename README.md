@@ -23,6 +23,7 @@ Documentazione per chi usa l'app: [docs/MANUALE.md](docs/MANUALE.md), che si leg
 - Trova i cantanti nella cartella propria di Muse Sing (`~/Library/Application Support/app.musesing.desktop/Singers`) e, se c'è, in quella di OpenUtau, e ricorda il cantante di ogni voce.
 - **Genera l'audio** con un cantante per voce, su CPU, con cache per voce; velocità ridotta per lo studio; mix con volume/pan/muta/solo, loop di un tratto, rullo con tutte le parti; export MP3/FLAC/WAV e basi di studio (un MP3 per voce con quella voce in evidenza).
 - **Progetti `.musesing`** (`project.rs`): salva/apri, progetti recenti, «ricarica partitura» che conserva le scelte delle voci rimaste.
+- **Ritocchi** per voce (`edits.rs`, `src/views/project/Editor.tsx`): fonemi e tempi dei fonemi per parola (o per tutto il brano), curve di intonazione, dinamica, timbro e velocità delle consonanti in tick della partitura; legati all'id stabile delle note (`battuta.passata.offset`), rigenerano solo le frasi toccate.
 
 ## Registra un cantante
 
@@ -97,7 +98,7 @@ pnpm tauri dev               # app in modalità sviluppo
 cd src-tauri && cargo test   # test del motore (su Linux serve libasound2-dev per cpal)
 ```
 
-- `src-tauri/src/score.rs`: lettura del `.mscz`, ordine di esecuzione (ritornelli, salti).
+- `src-tauri/src/score.rs`: lettura del `.mscz`, ordine di esecuzione (ritornelli, salti), id stabile di ogni nota.
 - `src-tauri/src/lyrics.rs`: sillabe → parole, pulizia, regole italiane, eccezioni inglesi.
 - `src-tauri/src/ustx.rs`: disposizione delle note e delle sillabe per il motore (formato dei progetti OpenUtau `.ustx` 0.10, usato anche dai test di confronto; l'app non esporta più `.ustx`).
 - `src-tauri/src/corpus.rs`: frasi da registrare (esercizi, vocalizzi, brani) e controllo della copertura di fonemi e note.
@@ -105,7 +106,7 @@ cd src-tauri && cargo test   # test del motore (su Linux serve libasound2-dev pe
 - `src-tauri/src/voice.rs`: cartella del cantante (profilo, frasi, registrazioni).
 - `src-tauri/src/singers.rs`: cantanti installati in OpenUtau (l'id è la cartella di `character.txt`, relativa a `Singers`) e nella cartella di Muse Sing (prefisso `musesing:`), con la compatibilità con il motore.
 - `src-tauri/src/ds/`: motore DiffSinger, port in Rust del codice di OpenUtau (`OpenUtau.Core/DiffSinger`, MIT) con ONNX Runtime (`ort`, linkato staticamente): G2P (`g2p.rs`, modelli italiano e ARPAbet+ di OpenUtau in `resources/g2p/`), fonemizzazione e durate (`phonemize.rs`), pitch, modello acustico e vocoder (`render.rs`).
-- `src-tauri/src/sing.rs`: render di tutte le voci (e dell'accompagnamento) in un thread, con annullamento, velocità e cache su disco per voce; `mix.rs`: mix stereo con solo ed export (hound, flacenc, LAME); `project.rs`: file `.musesing`; `accomp.rs`: organo per le parti strumentali.
+- `src-tauri/src/sing.rs`: render di tutte le voci (e dell'accompagnamento) in un thread, con annullamento, velocità, ritocchi e cache su disco per voce e per frase (l'intonazione prevista dal modello è in cache a parte, così le curve si sommano sempre alla stessa); `mix.rs`: mix stereo con solo ed export (hound, flacenc, LAME); `project.rs`: file `.musesing`; `accomp.rs`: organo per le parti strumentali.
 - `src-tauri/examples/ds_render.rs`: render da riga di comando (`cargo run --release --example ds_render -- <brano.mscz> <voicebank> <out.wav>`); `tests/sing.rs` fa un render completo se `MUSESING_TEST_VOICEBANK` punta a un voicebank.
 - `src-tauri/tests/fixtures.rs`: confronta i progetti con quelli dello script Python di riferimento (`../tools/mscz_to_ustx.py`) sui quattro brani di prova. Le partiture del coro non sono nel repository: senza `src-tauri/tests/fixtures/` questi test vengono saltati.
 - `preview.html`: interfaccia nel browser con il backend simulato, solo per lo sviluppo (`pnpm dev`, poi `/preview.html?auto=1`). La scheda di conversione usa le analisi dei brani (`src/preview-santo.json`, `src/preview-sonnet.json`), anch'esse solo in locale.

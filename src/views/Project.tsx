@@ -41,13 +41,15 @@ import {
   type PlayDone,
   type PlayProgress,
   type Project as ProjectData,
+  type PartEdits,
   type RecentProject,
-  type RollPart,
+  type Roll,
   type SingDone,
   type SingerInfo,
   type SingersList,
   type SingProgress,
 } from "../lib/api";
+import { Editor } from "./project/Editor";
 import { ScoreRoll } from "./project/ScoreRoll";
 
 function fmtDuration(sec: number) {
@@ -153,7 +155,7 @@ export default function ProjectView({ active }: { active: boolean }) {
   const [dirty, setDirty] = useState(false);
   const [singers, setSingers] = useState<SingersList | null>(null);
   const [recent, setRecent] = useState<RecentProject[]>([]);
-  const [roll, setRoll] = useState<RollPart[]>([]);
+  const [roll, setRoll] = useState<Roll | null>(null);
   const [mine, setMine] = useState<string | null>(readMine);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -179,6 +181,9 @@ export default function ProjectView({ active }: { active: boolean }) {
   const playingRef = useRef(play);
   playingRef.current = play;
   const seekTimer = useRef<number | undefined>(undefined);
+  /** Play from here when the running render is done («Applica e ascolta»). */
+  const playAfterRender = useRef<number | null>(null);
+  const startPlayRef = useRef<(from: number, range: [number, number] | null) => void>(() => {});
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
 
@@ -323,10 +328,13 @@ export default function ProjectView({ active }: { active: boolean }) {
         setRenderJob(null);
         setProgress(null);
         setCancelling(false);
+        const then = playAfterRender.current;
+        playAfterRender.current = null;
         if (d.error) setError(d.error);
         else if (!d.cancelled) {
           setRendered({ sig: sigRef.current, seconds: d.seconds, warnings: d.warnings });
-          setCursor(0);
+          setCursor(then ?? 0);
+          if (then !== null) window.setTimeout(() => startPlayRef.current(then, null), 50);
         }
       }),
       listen<PlayProgress>("sing-play", (e) => {
@@ -352,7 +360,9 @@ export default function ProjectView({ active }: { active: boolean }) {
   const hasInstruments = !!analysis?.parts.some((p) => !p.sung);
   const accompOn = !!project?.accompaniment.enabled && hasInstruments;
   const renderParts = sung.map((p) => ({ name: p.name, singer: p.singer, color: p.color }));
-  const sig = project && opened ? JSON.stringify([opened.score_path, project.lang, project.pitch, project.tempo_factor, accompOn, renderParts]) : "";
+  const renderEdits: Record<string, PartEdits> = Object.fromEntries(sung.filter((p) => project?.edits[p.name]).map((p) => [p.name, project!.edits[p.name]]));
+  const sig =
+    project && opened ? JSON.stringify([opened.score_path, project.lang, project.pitch, project.tempo_factor, accompOn, renderParts, renderEdits]) : "";
   sigRef.current = sig;
   const upToDate = !!rendered && rendered.sig === sig;
   const mix: MixPart[] = useMemo(() => {
@@ -441,8 +451,9 @@ export default function ProjectView({ active }: { active: boolean }) {
   const setPart = (name: string, patch: Partial<PartCfg>) =>
     setProject((p) => ({ ...p, parts: p.parts.map((x) => (x.name === name ? { ...x, ...patch } : x)) }));
 
-  const startRender = async () => {
+  const startRender = async (thenPlayFrom: number | null = null) => {
     if (!project || !opened) return;
+    playAfterRender.current = thenPlayFrom;
     setError(null);
     setNotice(null);
     if (play) await singApi.stop();
@@ -454,6 +465,7 @@ export default function ProjectView({ active }: { active: boolean }) {
         parts: renderParts,
         tempo_factor: project.tempo_factor,
         accompaniment: accompOn,
+        edits: renderEdits,
       });
       renderJobRef.current = job;
       setRenderJob(job);
@@ -481,6 +493,20 @@ export default function ProjectView({ active }: { active: boolean }) {
     },
     [mixKey, rendered],
   );
+  startPlayRef.current = startPlay;
+
+  // «Applica e ascolta»: after the edit is in the project (next render of this view), render the
+  // changed phrases if needed, then play
+  const [applyFrom, setApplyFrom] = useState<number | null>(null);
+  useEffect(() => {
+    if (applyFrom === null) return;
+    setApplyFrom(null);
+    (async () => {
+      if (upToDate) return startPlay(applyFrom, null);
+      if (play) await singApi.stop();
+      startRender(applyFrom);
+    })();
+  }, [applyFrom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopPlay = () => singApi.stop();
 
@@ -831,7 +857,7 @@ export default function ProjectView({ active }: { active: boolean }) {
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-3">
-                <button className="btn-primary" onClick={startRender} disabled={busy || nothing || missingSinger.length > 0 || notEngine.length > 0}>
+                <button className="btn-primary" onClick={() => startRender()} disabled={busy || nothing || missingSinger.length > 0 || notEngine.length > 0}>
                   <Mic2 className="h-4 w-4" /> {rendered ? "Genera di nuovo" : "Genera audio"}
                 </button>
                 {nothing ? (
@@ -841,7 +867,7 @@ export default function ProjectView({ active }: { active: boolean }) {
                 ) : notEngine.length > 0 ? (
                   <span className="text-amber-600">{notEngine.map((p) => p.name).join(", ")}: il cantante scelto non è supportato.</span>
                 ) : rendered && !upToDate ? (
-                  <span className="text-amber-600">Hai cambiato voci, cantanti, lingua, intonazione o velocità: genera di nuovo.</span>
+                  <span className="text-amber-600">Hai cambiato voci, cantanti, lingua, intonazione, velocità o ritocchi: genera di nuovo.</span>
                 ) : !rendered ? (
                   <span className="text-zinc-500">Le voci già generate con le stesse scelte si riusano subito.</span>
                 ) : null}
@@ -930,10 +956,10 @@ export default function ProjectView({ active }: { active: boolean }) {
             )}
           </section>
 
-          {roll.length > 0 && (
+          {roll && roll.parts.length > 0 && (
             <section className="card">
               <ScoreRoll
-                parts={roll}
+                parts={roll.parts}
                 cursor={pos}
                 playing={!!play}
                 highlight={mine}
@@ -943,6 +969,25 @@ export default function ProjectView({ active }: { active: boolean }) {
                   setLoop(r);
                   if (r) setCursor(r[0]);
                 }}
+              />
+            </section>
+          )}
+
+          {roll && rendered && sung.length > 0 && (
+            <section className="card">
+              <Editor
+                parts={sung.map((p) => p.name)}
+                roll={roll}
+                edits={project.edits}
+                initialPart={mine}
+                rendered={rendered}
+                upToDate={upToDate}
+                rendering={rendering}
+                cursor={pos}
+                playing={!!play}
+                onChange={(part, e) => setProject((p) => ({ ...p, edits: { ...p.edits, [part]: e } }))}
+                onSeek={seek}
+                onApply={setApplyFrom}
               />
             </section>
           )}

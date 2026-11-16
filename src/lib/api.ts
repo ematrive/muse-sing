@@ -57,13 +57,28 @@ export type Project = {
   tempo_factor: number;
   parts: PartCfg[];
   accompaniment: AccompCfg;
-  edits: Record<string, unknown>;
+  edits: Record<string, PartEdits>;
+};
+/** Curve points (tick, value): ticks of the written score, every CURVE_STEP; missing = default. */
+export type Curve = [number, number][];
+export const CURVE_STEP = 5;
+/** `word`: the word when edited (an edit on a note that now sings another word is skipped). */
+export type WordEdit = { word?: string; phonemes?: string | null; offsets?: number[] };
+export type PartEdits = {
+  words?: Record<string, string>;
+  notes?: Record<string, WordEdit>;
+  pitch?: Curve;
+  dynamics?: Curve;
+  gender?: Curve;
+  velocity?: Curve;
 };
 /** A project as held by the UI: `path` null = never saved; `score_path` = working copy of the score. */
 export type OpenedProject = { project: Project; path: string | null; score_path: string; analysis: Analysis; default_dir: string };
 export type RecentProject = { path: string; title: string };
-export type RollNote = { start: number; end: number; pitch: number; lyric: string | null };
+export type RollNote = { id: string; tick: number; end_tick: number; start: number; end: number; pitch: number; lyric: string | null };
 export type RollPart = { name: string; sung: boolean; notes: RollNote[] };
+/** `tempos`: (tick, bpm at the practice tempo). */
+export type Roll = { parts: RollPart[]; tempos: [number, number][] };
 /** Name of the accompaniment track in the mix (project.rs ACCOMPANIMENT). */
 export const ACCOMPANIMENT = "Accompagnamento";
 
@@ -73,14 +88,27 @@ export const projectApi = {
   save: (path: string, project: Project, scorePath: string) => invoke<string>("project_save", { path, project, scorePath }),
   reloadScore: (project: Project, mscz: string) => invoke<OpenedProject>("project_reload_score", { project, mscz }),
   recent: () => invoke<RecentProject[]>("project_recent"),
-  roll: (scorePath: string, tempoFactor: number) => invoke<RollPart[]>("score_roll", { scorePath, tempoFactor }),
+  roll: (scorePath: string, tempoFactor: number) => invoke<Roll>("score_roll", { scorePath, tempoFactor }),
 };
 
 // --- sung audio (Muse Sing's DiffSinger engine) --------------------------------------------------
 
 export type PitchMode = "model" | "notes";
 export type RenderPart = { name: string; singer: string; color: string | null };
-export type RenderRequest = { path: string; lang: Lang; pitch: PitchMode; parts: RenderPart[]; tempo_factor: number; accompaniment: boolean };
+export type RenderRequest = {
+  path: string;
+  lang: Lang;
+  pitch: PitchMode;
+  parts: RenderPart[];
+  tempo_factor: number;
+  accompaniment: boolean;
+  edits: Record<string, PartEdits>;
+};
+export type PhoneInfo = { symbol: string; start: number; end: number; base: number };
+export type WordInfo = { id: string; word: string; start: number; end: number; phones: PhoneInfo[] };
+export type PitchSeg = { start: number; step: number; midi: number[] };
+/** What the editor shows of a rendered part (seconds at the practice tempo). */
+export type TrackInfo = { words: WordInfo[]; pitch: PitchSeg[]; phonemes: [string, boolean][]; gender: boolean; velocity: boolean };
 export type MixPart = { name: string; volume_db: number; pan: number; mute: boolean; solo: boolean };
 export type SingProgress = { job: number; part: string; index: number; parts: number; phrase: number; phrases: number; cached: boolean };
 export type SingDone = { job: number; error: string | null; cancelled: boolean; warnings: string[]; seconds: number };
@@ -91,6 +119,7 @@ export type PlayDone = { job: number; error: string | null };
 export const singApi = {
   start: (req: RenderRequest) => invoke<number>("sing_start", { req }),
   cancel: () => invoke<void>("sing_cancel"),
+  trackInfo: (part: string) => invoke<TrackInfo | null>("sing_track_info", { part }),
   play: (mix: MixPart[], fromSec: number, loopRange: [number, number] | null) => invoke<number>("sing_play", { mix, fromSec, loopRange }),
   stop: () => invoke<void>("sing_stop"),
   export: (mix: MixPart[], path: string) => invoke<string>("sing_export", { mix, path }),

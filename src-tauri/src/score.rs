@@ -29,6 +29,9 @@ pub struct Lyric {
 
 #[derive(Debug, Clone)]
 pub struct Note {
+    /// Stable id: `measure.time-it-is-played.offset-in-ticks` (measure numbered from 1 in the
+    /// written score). Edits are tied to it, so they survive reloading a changed score.
+    pub id: String,
     pub start: Beats,
     pub dur: Beats,
     pub pitch: i32,
@@ -208,7 +211,13 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
         }
         let mut notes: Vec<(Note, bool)> = vec![];
         let mut mstart: Beats = Ratio::from_integer(0);
+        let mut played: HashMap<usize, u32> = HashMap::new();
         for &(mi, pass) in &order {
+            let occurrence = {
+                let c = played.entry(mi).or_insert(0);
+                *c += 1;
+                *c
+            };
             if let Some(m) = staff_measures[si].get(mi) {
                 if si == 0 {
                     for (off, t) in &m.tempos {
@@ -222,7 +231,9 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
                     let verse = pass as i32 - 1;
                     let shared = n.lyrics.keys().all(|&k| k == 0);
                     let lyric = n.lyrics.get(&verse).or_else(|| if shared { n.lyrics.get(&0) } else { None }).cloned();
-                    notes.push((Note { start: mstart + n.offset, dur: n.dur, pitch: n.pitch, lyric }, n.tie_prev));
+                    let off = (n.offset * Ratio::from_integer(480)).round().to_integer();
+                    let id = format!("{}.{occurrence}.{off}", mi + 1);
+                    notes.push((Note { id, start: mstart + n.offset, dur: n.dur, pitch: n.pitch, lyric }, n.tie_prev));
                 }
             }
             mstart += lens[mi];

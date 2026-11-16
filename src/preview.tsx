@@ -131,19 +131,59 @@ function opened(path: string | null) {
     default_dir: "/Users/utente/Music",
   };
 }
-function roll() {
+// 120 bpm at 100%: 960 ticks a second
+let rollTempo = 1;
+function roll(tempoFactor = 1) {
+  rollTempo = tempoFactor;
   const an = (q.get("song") === "sonnet" ? sonnet : santo) as PAnalysis;
   const syl = ["san", "to", "si", "gno", "re", "dio", "del", "l'u", "ni", "ver", "so"];
-  return an.parts.map((p, i) => {
+  const parts = an.parts.map((p, i) => {
     const notes = [];
     let t = 0;
-    for (let k = 0; t < an.duration_sec; k++) {
+    const dur = q.get("long") ? 240 : an.duration_sec;
+    for (let k = 0; t < dur; k++) {
       const d = [0.5, 1, 1.5, 0.75][(k + i) % 4];
-      notes.push({ start: t, end: t + d * 0.95, pitch: 72 - i * 6 + ((k * 7 + i * 3) % 9) - 4, lyric: p.sung ? syl[k % syl.length] : null });
+      const tick = Math.round(t * 960);
+      const endTick = Math.round((t + d * 0.95) * 960);
+      notes.push({
+        id: `${k + 1}.1.0`,
+        tick,
+        end_tick: endTick,
+        start: tick / 960 / tempoFactor,
+        end: endTick / 960 / tempoFactor,
+        pitch: 72 - i * 6 + ((k * 7 + i * 3) % 9) - 4,
+        lyric: p.sung ? syl[k % syl.length] : null,
+      });
       t += d;
     }
     return { name: p.name, sung: p.sung, notes };
   });
+  return { parts, tempos: [[0, 120 * tempoFactor]] };
+}
+function trackInfo(part: string) {
+  const p = roll(rollTempo).parts.find((x) => x.name === part);
+  if (!p) return null;
+  const words = p.notes.map((n) => {
+    const syl = n.lyric ?? "a";
+    const cons = syl.replace(/[aeiouà]/g, "").split("").slice(0, 2);
+    const vowel = syl.match(/[aeiouà]/)?.[0] ?? "a";
+    const sym = [...cons.map((c) => (c === "'" ? "l" : c)), vowel];
+    const start = n.start - 0.06 * cons.length;
+    const phones = sym.map((s, i) => {
+      const a = i < cons.length ? start + 0.06 * i : n.start;
+      const b = i + 1 < cons.length ? a + 0.06 : i < cons.length ? n.start : n.end;
+      return { symbol: s, start: a, end: b, base: a };
+    });
+    return { id: n.id, word: syl.replace("'", ""), start: n.start, end: n.end, phones };
+  });
+  const step = 0.0116;
+  const pitch = p.notes.map((n) => ({
+    start: n.start,
+    step,
+    midi: Array.from({ length: Math.floor((n.end - n.start) / step) }, (_, i) => n.pitch + 0.25 * Math.sin(i * step * 2 * Math.PI * 5.5) * Math.min(1, i / 40)),
+  }));
+  const phonemes = ["a", "e", "i", "o", "u", "b", "d", "g", "k", "l", "m", "n", "p", "r", "s", "t", "v", "z", "ny", "gl", "ch"].map((s) => [s, "aeiou".includes(s)]);
+  return { words, pitch, phonemes, gender: true, velocity: true };
 }
 
 setInterval(() => emit("audio-level", 0.05 + Math.random() * 0.25), 50);
@@ -190,7 +230,8 @@ mockIPC(
     if (cmd === "project_save") return String(a.path).endsWith(".musesing") ? a.path : `${a.path}.musesing`;
     if (cmd === "project_reload_score") return opened(null);
     if (cmd === "project_recent") return [{ path: "/Users/utente/Music/Santo.musesing", title: "Santo" }];
-    if (cmd === "score_roll") return roll();
+    if (cmd === "score_roll") return roll(Number(a.tempoFactor) || 1);
+    if (cmd === "sing_track_info") return trackInfo(String(a.part));
     if (cmd === "plugin:dialog|ask") return true;
     if (cmd === "sing_stop") return sing.stop();
     if (cmd === "sing_export") return a.path;

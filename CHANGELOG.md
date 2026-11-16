@@ -12,6 +12,10 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 - **Ripeti un tratto:** trascinando sul righello del rullo l'ascolto ripete quel tratto.
 - **Solo** per ogni traccia.
 - **Basi di studio:** un MP3 per ogni voce, con quella voce in primo piano e le altre più basse.
+- **Ritocchi** per ogni voce, salvati nel progetto:
+  - **pronuncia** di una parola, solo lì o in tutto il brano, scegliendo i fonemi del cantante, e **tempi** dei fonemi trascinandoli;
+  - curve disegnate a mano di **intonazione** (con vibrato sulle note), **dinamica**, **timbro** (sperimentale) e **velocità delle consonanti**;
+  - «Applica e ascolta» rigenera solo le frasi toccate e riparte da lì.
 
 ### Tolto
 - Il file `.ustx` per OpenUtau: Muse Sing fa tutto da solo. I cantanti si possono tenere nella cartella di Muse Sing.

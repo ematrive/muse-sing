@@ -31,7 +31,7 @@ pub fn project_notes(p: &Project) -> Vec<(String, Vec<PNote>)> {
             let notes = vp
                 .notes
                 .iter()
-                .map(|n| PNote { position: vp.position + n.position, duration: n.duration, tone: n.tone, lyric: n.lyric.clone() })
+                .map(|n| PNote { id: n.id.clone(), position: vp.position + n.position, duration: n.duration, tone: n.tone, lyric: n.lyric.clone() })
                 .collect();
             (vp.name.clone(), notes)
         })

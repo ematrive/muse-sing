@@ -58,8 +58,9 @@ fn main() {
         let shown: Vec<String> = ph.phones.iter().take(40).map(|p| format!("{}@{}-{}", p.symbol, p.position, p.end)).collect();
         eprintln!("[{name}] {} phonemes: {} ...", ph.phones.len(), shown.join(" "));
         let t = Instant::now();
-        let (buf, warnings) = ds::render::render_track(&vb, &ph, &notes, &axis, &settings, |i, n| { eprint!("\r[{name}] phrase {i}/{n}"); true })
+        let out = ds::render::render_track(&vb, &ph, &notes, &axis, &settings, &|_| [0.0; 3], None, |i, n| { eprint!("\r[{name}] phrase {i}/{n}"); true })
             .expect("render").expect("not cancelled");
+        let (buf, warnings) = (out.samples, out.warnings);
         eprintln!("\n[{name}] rendered {:.1}s of audio in {:.1}s", buf.len() as f64 / 44100.0, t.elapsed().as_secs_f64());
         for w in warnings { eprintln!("[{name}] {w}"); }
         if mix.len() < buf.len() { mix.resize(buf.len(), 0.0); }

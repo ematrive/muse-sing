@@ -120,3 +120,25 @@ fn no_warnings_on_simple_scores() {
         println!("{n}: {:?}", s.warnings);
     }
 }
+
+/// Every note of a part has its own stable id, also when repeats and D.C. play a measure again,
+/// and the id doesn't depend on the other parts.
+#[test]
+fn note_ids_are_unique() {
+    let Some(dir) = fixtures() else { return };
+    // more scores: MUSESING_TEST_SCORES=<folder>
+    let extra: Vec<std::path::PathBuf> = std::env::var_os("MUSESING_TEST_SCORES").map(Into::into).into_iter().collect();
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.path()).collect();
+    for d in extra {
+        files.extend(std::fs::read_dir(d).unwrap().flatten().map(|e| e.path()));
+    }
+    for f in files.iter().filter(|f| f.extension().is_some_and(|e| e == "mscz")) {
+        let score = read_mscz(f).unwrap();
+        for p in &score.parts {
+            let mut seen = std::collections::HashSet::new();
+            for n in &p.notes {
+                assert!(seen.insert(n.id.clone()), "{}: {}: id {} twice", f.display(), p.name, n.id);
+            }
+        }
+    }
+}

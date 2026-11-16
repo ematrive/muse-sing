@@ -72,9 +72,31 @@ Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo rico
 3. **Ripetere un tratto:** trascina sul righello in cima al rullo (i minuti) per scegliere un tratto, che si colora di giallo: l'ascolto lo ripete finché non premi Ferma. La × accanto al tratto, sopra, lo toglie.
 4. **Mix** di ogni voce e dell'accompagnamento: volume, posizione a sinistra o a destra (pan), «muta» per escluderla, «solo» per sentire solo le tracce con «solo» acceso. Le modifiche si sentono subito, senza rigenerare. Doppio clic su un cursore lo riporta a zero.
 
-Le voci già generate con le stesse scelte vengono riusate: se cambi il cantante di una sola voce, si rigenera solo quella. Se cambi voci, cantanti, lingua, intonazione o velocità dopo aver generato, Muse Sing chiede di generare di nuovo.
+Le voci già generate con le stesse scelte vengono riusate: se cambi il cantante di una sola voce, si rigenera solo quella, e dopo un ritocco solo le frasi toccate. Se cambi voci, cantanti, lingua, intonazione, velocità o ritocchi dopo aver generato, Muse Sing chiede di generare di nuovo.
 
 **Avvisi di pronuncia.** Sotto il lettore, «avvisi di pronuncia» elenca le parole che il cantante non sa dire del tutto (un suono che non ha). Di solito la parola si sente lo stesso, con quel suono saltato.
+
+### Ritocchi
+
+Dopo aver generato l'audio, il riquadro **Ritocchi** sotto il rullo mostra una voce alla volta (sceglila in alto a sinistra; parte da «la mia voce»): le note in grigio, in viola l'intonazione davvero cantata, sotto le parole. I ritocchi si salvano nel progetto. Se ricarichi la partitura:
+- i ritocchi di una parola restano legati alla sua nota (battuta, passata, posizione nella battuta). Se aggiungi o togli battute prima di quella parola, al suo posto c'è un'altra parola: Muse Sing non applica il ritocco e lo segnala tra gli avvisi;
+- le curve restano alla stessa posizione nel brano: se aggiungi o togli battute prima, si spostano con le note solo da lì in avanti. In quel caso controllale.
+
+**Applica e ascolta** rigenera solo le frasi cambiate (qualche secondo) e fa partire l'ascolto poco prima del punto ritoccato.
+
+- **Pronuncia:** clicca una parola. Nel pannello vedi i fonemi che il cantante canta (per esempio *tx oh gl gl iy*):
+  - **cambiali** scrivendo nella casella o cliccando i fonemi del cantante (in viola le vocali), separati da spazi. Si possono usare anche i simboli italiani del dizionario (*t*, *EE*, *JJ*…);
+  - **solo qui** cambia solo questa volta; **ogni volta che c'è «parola»** vale per tutto il brano (in quella voce);
+  - **tempi:** trascina l'inizio di un fonema nella barretta sotto, per esempio per anticipare una consonante. Prima applica i fonemi, poi sistema i tempi;
+  - **Ripristina questa parola** torna alla pronuncia del dizionario.
+- **Intonazione:** disegna con il mouse nella fascia sotto le note: in alto la voce sale, in basso scende (100 cent = un semitono, al massimo ±2 semitoni). **Vibrato sulle note**, poi clic su una nota, aggiunge un vibrato leggero nella seconda parte della nota.
+- **Dinamica:** più forte o più piano in un punto (da −24 a +12 dB). Anche qui serve «Applica e ascolta», ma è immediato: la voce non si rigenera.
+- **Timbro** (sperimentale): più scuro o più chiaro. Con TIGER fino a ±0,3 cambia poco e oltre la voce si rovina; con altri cantanti potrebbe andare meglio.
+- **Consonanti:** più veloci o più lente (fino a 1,4 volte; oltre, con TIGER la voce perde l'intonazione).
+
+Nelle curve, **⌥** mentre disegni (o il pulsante **Gomma**) cancella; **Togli tutta la curva** la azzera.
+
+Nota: l'intonazione naturale la sceglie il modello del cantante, che ogni volta la canta un po' diversa. Muse Sing ricorda quella della prima generazione di ogni frase, così un ritocco cambia solo ciò che hai disegnato.
 
 ### Esportare
 
@@ -117,7 +139,7 @@ Il riquadro giallo elenca ciò che Muse Sing non gestisce del tutto:
   - *Dio*, *mio* e simili hanno la «i» piena;
   - le altre parole vengono dal dizionario italiano o, se mancano, da un modello che ne indovina la pronuncia.
 - **Inglese:** dizionario ARPAbet+, con correzioni per le forme arcaiche (*ask'd*, *feel'st*, *couldst*).
-- La correzione di una parola dentro Muse Sing arriverà con l'editor di pronuncia, in una prossima versione.
+- Una parola detta male si corregge nei **Ritocchi** (vedi sopra).
 
 ## Registra un cantante
 

@@ -468,6 +468,12 @@ pub fn sing_start(app: tauri::AppHandle, state: State<SingState>, req: RenderReq
     Ok(job)
 }
 
+/// Words, phonemes and sung pitch of a part of the last render (None before a render).
+#[tauri::command]
+pub fn sing_track_info(state: State<SingState>, part: String) -> Option<sing::TrackInfo> {
+    state.0.track_info(&part).map(|i| (*i).clone())
+}
+
 #[tauri::command]
 pub fn sing_cancel(state: State<SingState>) {
     state.0.cancel();
@@ -657,6 +663,11 @@ pub fn project_recent(app: tauri::AppHandle) -> Vec<RecentProject> {
 
 #[derive(Serialize)]
 pub struct RollNote {
+    /// Stable id of the note (`score::Note::id`).
+    pub id: String,
+    /// Position and end in ticks of the written score (480 per quarter).
+    pub tick: i64,
+    pub end_tick: i64,
     pub start: f64,
     pub end: f64,
     pub pitch: i32,
@@ -670,9 +681,16 @@ pub struct RollPart {
     pub notes: Vec<RollNote>,
 }
 
+#[derive(Serialize)]
+pub struct Roll {
+    pub parts: Vec<RollPart>,
+    /// (tick, bpm at the practice tempo), to turn ticks into seconds.
+    pub tempos: Vec<(i64, f64)>,
+}
+
 /// Every part's notes in seconds (repeats unrolled, at `tempo_factor`), for the score roll.
 #[tauri::command]
-pub async fn score_roll(score_path: String, tempo_factor: f64) -> Result<Vec<RollPart>> {
+pub async fn score_roll(score_path: String, tempo_factor: f64) -> Result<Roll> {
     blocking(move || {
         let score = read_mscz(Path::new(&score_path))?;
         let ticks = |b: crate::score::Beats| *b.numer() as f64 / *b.denom() as f64 * crate::ustx::TICKS as f64;
@@ -680,7 +698,7 @@ pub async fn score_roll(score_path: String, tempo_factor: f64) -> Result<Vec<Rol
             score.tempos.iter().map(|(b, q)| (ticks(*b).round() as i64, q * 60.0 * tempo_factor.clamp(0.25, 2.0))).collect();
         let axis = crate::ds::time::TimeAxis::new(&tempos, crate::ustx::TICKS);
         let sec = |b: crate::score::Beats| axis.tick_to_ms(ticks(b)) / 1000.0;
-        Ok(score
+        let parts = score
             .parts
             .iter()
             .filter(|p| !p.notes.is_empty())
@@ -690,10 +708,19 @@ pub async fn score_roll(score_path: String, tempo_factor: f64) -> Result<Vec<Rol
                 notes: p
                     .notes
                     .iter()
-                    .map(|n| RollNote { start: sec(n.start), end: sec(n.start + n.dur), pitch: n.pitch, lyric: n.lyric.as_ref().map(|l| l.text.clone()) })
+                    .map(|n| RollNote {
+                        id: n.id.clone(),
+                        tick: ticks(n.start).round() as i64,
+                        end_tick: ticks(n.start + n.dur).round() as i64,
+                        start: sec(n.start),
+                        end: sec(n.start + n.dur),
+                        pitch: n.pitch,
+                        lyric: n.lyric.as_ref().map(|l| l.text.clone()),
+                    })
                     .collect(),
             })
-            .collect())
+            .collect();
+        Ok(Roll { parts, tempos })
     })
     .await
 }

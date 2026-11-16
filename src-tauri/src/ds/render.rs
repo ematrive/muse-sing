@@ -10,6 +10,8 @@ use crate::error::{Error, Result};
 pub const HEAD_FRAMES: usize = 8;
 pub const TAIL_FRAMES: usize = 8;
 pub const SAMPLE_RATE: u32 = 44100;
+/// Consonant speed curve limit (log2 of the speed).
+pub const MAX_VELOCITY: f32 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PitchSource {
@@ -34,6 +36,46 @@ impl Default for Settings {
     fn default() -> Self {
         Settings { pitch: PitchSource::Model, steps: 20, pitch_steps: 10, depth: 1.0, speaker: None }
     }
+}
+
+/// Edit curves sampled on a phrase's frames (None = not drawn).
+#[derive(Debug, Clone, Default)]
+pub struct PhraseCurves {
+    /// Intonation shift in cents.
+    pub cents: Option<Vec<f32>>,
+    /// Timbre -1…1.
+    pub gender: Option<Vec<f32>>,
+    /// Consonant speed -1…1 (log2 of the speed).
+    pub velocity: Option<Vec<f32>>,
+}
+
+/// Value of the edit curves at a time on the track: (cents, gender, velocity).
+pub type CurveFn<'a> = &'a dyn Fn(f64) -> [f32; 3];
+
+/// A rendered phrase: audio and the pitch it was sung at.
+pub struct Rendered {
+    /// Start in ms on the track.
+    pub start_ms: f64,
+    pub samples: Vec<f32>,
+    /// Sung pitch (MIDI, fractional) per frame from `start_ms`.
+    pub midi: Vec<f32>,
+    pub frame_ms: f64,
+    /// The pitch model's curve, when it was predicted now.
+    pub predicted: Option<Vec<f32>>,
+}
+
+/// Rendered phrases kept between renders, by a key of everything that makes them.
+pub trait PhraseCache {
+    fn get(&self, key: u64) -> Option<(Vec<f32>, Vec<f32>)>;
+    fn put(&self, key: u64, samples: &[f32], midi: &[f32]);
+}
+
+/// Pitch of a stretch of the track, for display: MIDI per frame.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PitchSeg {
+    pub start: f64,
+    pub step: f64,
+    pub midi: Vec<f32>,
 }
 
 pub struct RPhone {
@@ -370,8 +412,31 @@ fn resample(curve: &[f32], len: usize, src_ms: f64, dst_ms: f64) -> Vec<f32> {
         .collect()
 }
 
-/// Renders one phrase. Returns (start in ms on the track, mono samples at 44.1 kHz).
-pub fn render_phrase(vb: &Voicebank, phrase: &RPhrase, s: &Settings) -> Result<(f64, Vec<f32>)> {
+/// Frames of a phrase for the acoustic model: (start ms on the track, frame ms, frames).
+pub fn frame_layout(vb: &Voicebank, phrase: &RPhrase) -> Result<(f64, f64, usize)> {
+    let frame_ms = vb.vocoder()?.config.frame_ms();
+    let segs = phrase.segments(frame_ms);
+    let durations = durations_ms_to_frames(&segs.iter().map(|x| x.1).collect::<Vec<_>>(), frame_ms)?;
+    Ok((phrase.pos_ms() - HEAD_FRAMES as f64 * frame_ms, frame_ms, durations.iter().sum::<i32>() as usize))
+}
+
+/// Samples the edit curves on the frames of a phrase.
+pub fn phrase_curves(vb: &Voicebank, phrase: &RPhrase, curves: CurveFn) -> Result<PhraseCurves> {
+    let (start, frame_ms, total) = frame_layout(vb, phrase)?;
+    let vals: Vec<[f32; 3]> = (0..total).map(|i| curves(start + i as f64 * frame_ms)).collect();
+    let pick = |k: usize| {
+        let v: Vec<f32> = vals.iter().map(|x| x[k]).collect();
+        v.iter().any(|x| x.abs() > 1e-4).then_some(v)
+    };
+    Ok(PhraseCurves { cents: pick(0), gender: pick(1), velocity: pick(2) })
+}
+
+/// Renders one phrase (mono at 44.1 kHz).
+///
+/// `predicted`: the pitch model's curve for this phrase from an earlier render (the model is
+/// random: predicting again would change the intonation of the whole phrase at every edit).
+/// The curve used is returned in `Rendered::predicted` when the model ran.
+pub fn render_phrase(vb: &Voicebank, phrase: &RPhrase, s: &Settings, curves: &PhraseCurves, predicted: Option<Vec<f32>>) -> Result<Rendered> {
     if vb.needs_variance() {
         return Err(Error::Other("voicebank needs a variance model (not supported yet)".into()));
     }
@@ -394,13 +459,22 @@ pub fn render_phrase(vb: &Voicebank, phrase: &RPhrase, s: &Settings) -> Result<(
     let durations = durations_ms_to_frames(&segs.iter().map(|x| x.1).collect::<Vec<_>>(), frame_ms)?;
     let total = durations.iter().sum::<i32>() as usize;
 
+    let mut new_prediction = None;
     let midi: Vec<f32> = match s.pitch {
-        PitchSource::Model if vb.has_pitch_model() => {
-            let pm = vb.pitch()?;
-            let p = predict_pitch(pm, phrase, &speaker, s.pitch_steps)?;
-            resample(&p, total, pm.frame_ms(), frame_ms)
-        }
+        PitchSource::Model if vb.has_pitch_model() => match predicted.filter(|p| p.len() == total) {
+            Some(p) => p,
+            None => {
+                let pm = vb.pitch()?;
+                let p = predict_pitch(pm, phrase, &speaker, s.pitch_steps)?;
+                new_prediction = Some(resample(&p, total, pm.frame_ms(), frame_ms));
+                new_prediction.clone().unwrap()
+            }
+        },
         _ => (0..total).map(|i| note_pitch(&phrase.notes, start_ms + i as f64 * frame_ms) as f32).collect(),
+    };
+    let midi: Vec<f32> = match &curves.cents {
+        Some(c) => midi.iter().zip(c).map(|(m, c)| m + c / 100.0).collect(),
+        None => midi,
     };
     let f0: Vec<f32> = midi.iter().map(|&m| midi_to_hz(m as f64) as f32).collect();
 
@@ -443,10 +517,22 @@ pub fn render_phrase(vb: &Voicebank, phrase: &RPhrase, s: &Settings) -> Result<(
         inputs.push(("spk_embed", Input::F32x2(sp.repeat(&speaker, total), sp.hidden)));
     }
     if cfg.use_key_shift_embed {
-        inputs.push(("gender", Input::F32(vec![0.0; total])));
+        let g = match &curves.gender {
+            // the model takes −1…1 (positive = higher formants, brighter), and goes erratic
+            // beyond: measured on TIGER, ±1 moves the spectral centroid by ~±400 Hz
+            Some(c) => c.iter().map(|&g| g.clamp(-1.0, 1.0)).collect(),
+            None => vec![0.0; total],
+        };
+        inputs.push(("gender", Input::F32(g)));
     }
     if cfg.use_speed_embed {
-        inputs.push(("velocity", Input::F32(vec![1.0; total])));
+        let v = match &curves.velocity {
+            // speed 0.71…1.41: measured on TIGER, at ±1 (0.5×, 2×, the edges of its training
+            // range) the voice loses its pitch
+            Some(c) => c.iter().map(|&v| 2f32.powf(v.clamp(-MAX_VELOCITY, MAX_VELOCITY))).collect(),
+            None => vec![1.0; total],
+        };
+        inputs.push(("velocity", Input::F32(v)));
     }
     let mut out = acoustic.run(inputs)?;
     let mel_v = out.first()?;
@@ -458,47 +544,119 @@ pub fn render_phrase(vb: &Voicebank, phrase: &RPhrase, s: &Settings) -> Result<(
     let bins = *shape.last().unwrap_or(&0) as usize;
     let mut out = voc.model.run(vec![("mel", Input::F32x2(mel, bins)), ("f0", Input::F32(f0))])?;
     let (_, samples) = floats(&out.first()?)?;
-    Ok((start_ms, samples))
+    Ok(Rendered { start_ms, samples, midi, frame_ms, predicted: new_prediction })
 }
 
-/// Renders a phonemized track to a mono buffer at 44.1 kHz starting at 0 ms. Phrases that fail
-/// are skipped and reported in the returned warnings; if all of them fail, the first error is
-/// returned. `progress(done, total)` returns false to stop (the result is then `Ok(None)`).
+/// A rendered track.
+pub struct TrackOut {
+    /// Mono at 44.1 kHz from 0 ms.
+    pub samples: Vec<f32>,
+    pub warnings: Vec<String>,
+    /// Sung pitch of every phrase.
+    pub pitch: Vec<PitchSeg>,
+    /// Phrases rendered now (the others came from the cache).
+    pub rendered: usize,
+}
+
+fn fnv(h: u64, bytes: &[u8]) -> u64 {
+    bytes.iter().fold(h, |h, b| (h ^ *b as u64).wrapping_mul(0x100000001b3))
+}
+
+/// Key of everything a phrase's audio depends on (`salt`: voicebank, settings, engine version).
+fn phrase_key(salt: &str, phrase: &RPhrase, curves: &PhraseCurves) -> u64 {
+    let mut h = fnv(0xcbf29ce484222325, salt.as_bytes());
+    for p in &phrase.phones {
+        h = fnv(h, format!("{}:{:.3}:{:.3};", p.symbol, p.pos_ms, p.end_ms).as_bytes());
+    }
+    for n in &phrase.notes {
+        // of the lyric only whether it continues the previous note matters (predict_pitch)
+        h = fnv(h, format!("{}:{}:{:.3}:{:.3}:{}:{};", n.position, n.end, n.pos_ms, n.end_ms, n.tone, n.lyric.starts_with('+')).as_bytes());
+    }
+    for (tag, c) in [("c", &curves.cents), ("g", &curves.gender), ("v", &curves.velocity)] {
+        if let Some(c) = c {
+            h = fnv(h, tag.as_bytes());
+            for x in c {
+                h = fnv(h, &x.to_le_bytes());
+            }
+        }
+    }
+    h
+}
+
+/// Renders a phonemized track to a mono buffer at 44.1 kHz starting at 0 ms. Phrases found in
+/// `cache` (with the same `salt`) are not rendered again. Phrases that fail are skipped and
+/// reported in the warnings; if all of them fail, the first error is returned.
+/// `progress(done, total)` returns false to stop (the result is then `Ok(None)`).
+#[allow(clippy::too_many_arguments)]
 pub fn render_track(
     vb: &Voicebank,
     ph: &Phonemized,
     notes: &[PNote],
     axis: &TimeAxis,
     s: &Settings,
+    curves: CurveFn,
+    cache: Option<(&dyn PhraseCache, &str)>,
     mut progress: impl FnMut(usize, usize) -> bool,
-) -> Result<Option<(Vec<f32>, Vec<String>)>> {
+) -> Result<Option<TrackOut>> {
     let list = phrases(ph, notes, axis);
     let mut buf: Vec<f32> = vec![];
     let mut warnings = vec![];
+    let mut pitch = vec![];
     let mut first_error = None;
     let mut ok = 0;
+    let mut rendered = 0;
     for (i, phrase) in list.iter().enumerate() {
         if !progress(i, list.len()) {
             return Ok(None);
         }
-        let t0 = std::time::Instant::now();
-        let len_s = (phrase.phones.last().map(|p| p.end_ms).unwrap_or(0.0) - phrase.pos_ms()) / 1000.0;
-        crate::log!("frase {}/{}: da {:.1} s, lunga {:.1} s, {} fonemi", i + 1, list.len(), phrase.pos_ms() / 1000.0, len_s, phrase.phones.len());
-        let result = render_phrase(vb, phrase, s);
-        crate::log!("frase {}/{}: {} in {:.1} s", i + 1, list.len(), if result.is_ok() { "fatta" } else { "ERRORE" }, t0.elapsed().as_secs_f64());
+        let result = phrase_curves(vb, phrase, curves).and_then(|pc| {
+            let key = cache.map(|(_, salt)| phrase_key(salt, phrase, &pc));
+            if let (Some((c, _)), Some(k)) = (cache, key)
+                && let Some((samples, midi)) = c.get(k)
+            {
+                let (start_ms, frame_ms, _) = frame_layout(vb, phrase)?;
+                return Ok(Rendered { start_ms, samples, midi, frame_ms, predicted: None });
+            }
+            // the predicted pitch doesn't depend on the curves
+            let pitch_key = cache.map(|(_, salt)| phrase_key(&format!("{salt}|pitch"), phrase, &PhraseCurves::default()));
+            let predicted = match (cache, pitch_key) {
+                (Some((c, _)), Some(k)) => c.get(k).map(|(_, p)| p),
+                _ => None,
+            };
+            let t0 = std::time::Instant::now();
+            let len_s = (phrase.phones.last().map(|p| p.end_ms).unwrap_or(0.0) - phrase.pos_ms()) / 1000.0;
+            crate::log!("frase {}/{}: da {:.1} s, lunga {:.1} s, {} fonemi", i + 1, list.len(), phrase.pos_ms() / 1000.0, len_s, phrase.phones.len());
+            let r = render_phrase(vb, phrase, s, &pc, predicted);
+            crate::log!("frase {}/{}: {} in {:.1} s", i + 1, list.len(), if r.is_ok() { "fatta" } else { "ERRORE" }, t0.elapsed().as_secs_f64());
+            rendered += 1;
+            if let (Ok(r), Some((c, _)), Some(k)) = (&r, cache, key) {
+                c.put(k, &r.samples, &r.midi);
+                if let (Some(p), Some(pk)) = (&r.predicted, pitch_key) {
+                    c.put(pk, &[], p);
+                }
+            }
+            r
+        });
         match result {
-            Ok((start_ms, samples)) => {
+            Ok(r) => {
                 ok += 1;
-                let start = (start_ms * SAMPLE_RATE as f64 / 1000.0).round() as i64;
+                let start = (r.start_ms * SAMPLE_RATE as f64 / 1000.0).round() as i64;
                 let skip = (-start).max(0) as usize;
                 let start = start.max(0) as usize;
-                let need = start + samples.len().saturating_sub(skip);
+                let need = start + r.samples.len().saturating_sub(skip);
                 if buf.len() < need {
                     buf.resize(need, 0.0);
                 }
-                for (k, v) in samples.iter().skip(skip).enumerate() {
+                for (k, v) in r.samples.iter().skip(skip).enumerate() {
                     buf[start + k] += v;
                 }
+                // without the silent head and tail frames
+                let body = r.midi.len().saturating_sub(HEAD_FRAMES + TAIL_FRAMES);
+                pitch.push(PitchSeg {
+                    start: (r.start_ms + HEAD_FRAMES as f64 * r.frame_ms) / 1000.0,
+                    step: r.frame_ms / 1000.0,
+                    midi: r.midi.iter().skip(HEAD_FRAMES).take(body).copied().collect(),
+                });
             }
             Err(e) => {
                 let text: Vec<&str> = phrase.phones.iter().map(|p| p.symbol.as_str()).collect();
@@ -511,7 +669,7 @@ pub fn render_track(
         return Err(e);
     }
     progress(list.len(), list.len());
-    Ok(Some((buf, warnings)))
+    Ok(Some(TrackOut { samples: buf, warnings, pitch, rendered }))
 }
 
 #[cfg(test)]

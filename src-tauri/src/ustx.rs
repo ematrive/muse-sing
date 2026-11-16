@@ -99,6 +99,9 @@ pub struct Vibrato {
 
 #[derive(Serialize)]
 pub struct UNote {
+    /// Stable id of the score note (`score::Note::id`), not written to the file.
+    #[serde(skip)]
+    pub id: String,
     pub position: i64,
     pub duration: i64,
     pub tone: i32,
@@ -139,6 +142,7 @@ pub fn build(score: &Score, opt: &Options) -> Project {
             .iter()
             .zip(lyrics)
             .map(|(n, lyric)| UNote {
+                id: n.id.clone(),
                 position: ticks(n.start),
                 duration: ticks(n.dur),
                 tone: n.pitch,

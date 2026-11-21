@@ -88,9 +88,14 @@ fn tempos(sc: &Score) -> Vec<(Beats, f64)> {
     };
     let mut steps: Vec<(Beats, f64)> = vec![];
     let mut factor = 1.0;
+    // where the previous change ends (a tempo or a new metronome mark): from there, factor 1
+    let mut reset_at: Option<Beats> = None;
     for &(at, w) in &words {
         match w {
             TempoWord::Slower | TempoWord::Faster => {
+                if reset_at.is_some_and(|r| r <= at) {
+                    factor = 1.0;
+                }
                 let target = if w == TempoWord::Slower { RIT } else { ACCEL };
                 let stop = next_after(at).min(two_bars_after(at));
                 // one step per quarter note
@@ -103,7 +108,8 @@ fn tempos(sc: &Score) -> Vec<(Beats, f64)> {
                 // until a tempo, a new tempo or the end
                 let reset = words.iter().find(|x| x.0 > at && x.1 == TempoWord::ATempo).map(|x| x.0);
                 let change = changes.iter().copied().find(|p| *p > at);
-                if let Some(r) = [reset, change].into_iter().flatten().min() {
+                reset_at = [reset, change].into_iter().flatten().min();
+                if let Some(r) = reset_at {
                     steps.push((r, 1.0));
                 }
             }
@@ -285,6 +291,14 @@ mod tests {
         assert!((at(11) - 2.0 * RIT).abs() < 1e-9, "reaches the target in two bars");
         assert!((at(14) - 2.0 * RIT).abs() < 1e-9, "and stays there");
         assert_eq!(at(16), 2.0, "a tempo");
+
+        // a rit. ended by a new metronome mark: the next rit. starts again from the full tempo
+        let m = Marks { tempo: vec![(b(0), TempoWord::Slower), (b(16), TempoWord::Slower)], ..Default::default() };
+        let mut sc = score(vec![part("S", &[(0, 28, 60)], m)], vec![(0, 2.0), (12, 3.0)]);
+        prepare(&mut sc, true, 0);
+        let at = |x: i64| sc.tempos.iter().take_while(|t| t.0 <= b(x)).last().unwrap().1;
+        assert_eq!(at(14), 3.0, "the new tempo");
+        assert!(at(16) > 3.0 * RIT + 1e-6 && at(16) < 3.0, "ramps again: {}", at(16));
         assert_eq!(TempoWord::from_text("poco rit."), Some(TempoWord::Slower));
         assert_eq!(TempoWord::from_text("Rall. molto"), Some(TempoWord::Slower));
         assert_eq!(TempoWord::from_text("ritornello"), None);

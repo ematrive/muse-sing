@@ -244,6 +244,29 @@ mockIPC(
     if (cmd === "sing_start") return sing.start(a.req as unknown as { parts: { name: string }[] });
     if (cmd === "sing_cancel") return sing.cancel();
     if (cmd === "sing_play") return sing.play(a.fromSec);
+    if (cmd === "sing_check" || cmd === "sing_check_replay") {
+      // a pretend take: 2 s of singing, then a result made up from the part's notes
+      const me = sing.play(Number(a.fromSec) || 0);
+      if (cmd === "sing_check") {
+        const from = Number(a.fromSec) || 0;
+        const part = roll(rollTempo).parts.find((p) => p.name === a.part)!;
+        window.setTimeout(() => {
+          sing.stop();
+          const inside = part.notes.filter((n) => n.start >= from && n.end <= from + 12);
+          const verdicts = ["in_tune", "in_tune", "in_tune", "almost", "in_tune", "off", "in_tune", "missed"];
+          emit("sing-check-done", {
+            job: me,
+            part: a.part,
+            notes: inside.map((n, k) => ({ id: n.id, verdict: verdicts[k % verdicts.length], cents: [3, -8, 12, 38, -5, -70, 9, null][k % 8] })),
+            line: inside.flatMap((n, k) => (k % 8 === 7 ? [] : Array.from({ length: Math.floor((n.end - n.start) / 0.02) }, (_, i) => [n.start + i * 0.02, n.pitch + [0.03, -0.08, 0.12, 0.38, -0.05, -0.7, 0.09, 0][k % 8] + 0.1 * Math.sin(i / 3)]))),
+            range: [from, from + 12],
+            lag: 0.03,
+            error: null,
+          });
+        }, 2000);
+      }
+      return me;
+    }
     if (cmd === "sing_export_guides") return ["/Users/utente/Music/Santo - Soprano.mp3", "/Users/utente/Music/Santo - Contralto.mp3"];
     if (cmd === "project_new" || cmd === "project_open") return opened(cmd === "project_open" ? "/Users/utente/Music/Santo.msng" : null);
     if (cmd === "project_save") return String(a.path).endsWith(".msng") ? a.path : `${a.path}.msng`;

@@ -195,6 +195,21 @@ export type SingProgress = { job: number; part: string; index: number; parts: nu
 export type SingDone = { job: number; error: string | null; cancelled: boolean; warnings: string[]; seconds: number };
 export type PlayProgress = { job: number; t: number; total: number };
 export type PlayDone = { job: number; error: string | null };
+/** «Canta e controlla»: `sing-check` while singing, `sing-check-done` at the end. */
+export type CheckProgress = { job: number; t: number; counting: boolean; level: number };
+export type Verdict = "in_tune" | "almost" | "off" | "missed" | "not_judged";
+export type NoteCheck = { id: string; verdict: Verdict; cents: number | null };
+export type CheckDone = {
+  job: number;
+  part: string;
+  notes: NoteCheck[];
+  /** sung pitch: (seconds, MIDI), next to the notes */
+  line: [number, number][];
+  range: [number, number];
+  lag: number;
+  /** "" = replaced by something else */
+  error: string | null;
+};
 
 /** Render: `sing-progress` / `sing-done` events; playback: `sing-play` / `sing-play-done`. */
 export const singApi = {
@@ -208,6 +223,11 @@ export const singApi = {
   /** One file per sung part, that part in front and the others lowered by `othersDb`. */
   exportGuides: (mix: MixPart[], dir: string, ext: string, othersDb: number, room: Room, countIn: boolean, kind: GuideKind) =>
     invoke<string[]>("sing_export_guides", { mix, dir, ext, othersDb, ...room, countIn, kind }),
+  /** Plays the mix from `fromSec` (to `toSec` or the end) and records the microphone. */
+  check: (mix: MixPart[], part: string, fromSec: number, toSec: number | null, room: Room) =>
+    invoke<number>("sing_check", { mix, part, fromSec, toSec, ...room }),
+  /** The last check's stretch with the recorded voice over the mix (`sing-play` events). */
+  checkReplay: (mix: MixPart[], room: Room) => invoke<number>("sing_check_replay", { mix, ...room }),
 };
 
 export const LANGS: Record<Lang, string> = { it: "Italiano", en: "English", la: "Latino (ecclesiastico)" };

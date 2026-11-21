@@ -72,7 +72,7 @@ Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo rico
 - **Ambiente:** il riverbero di una stanza, di una chiesa o di una cattedrale, sentito in ascolto e messo nei file esportati e nelle basi di studio. «Nessuno» lascia la voce secca, com'era prima. Sotto, lo slider **Riverbero** regola quanto se ne sente: 50% è il valore normale, 0% lo toglie, 100% lo raddoppia (doppio clic: torna al 50%). Si può cambiare in qualsiasi momento senza generare di nuovo.
 - **Voci:** spunta quelle da cantare e scegli il **cantante** di ognuna. Se il cantante ha più colori di voce (Tiger ne ha diversi), accanto compare la scelta del colore. Muse Sing ricorda il cantante di ogni voce (Soprano, Tenore…) da un brano all'altro.
 - **Coristi:** con 2 o 3 coristi la voce è cantata da una piccola sezione invece che da un solista: ogni corista ha un altro colore di voce e canta in modo leggermente diverso, come in un coro vero. La generazione dura 2 o 3 volte tanto (le voci già generate si riusano).
-- **La mia voce:** il pulsante accanto al nome evidenzia quella voce nel rullo.
+- **La mia voce:** il pulsante accanto al nome evidenzia quella voce nel rullo e la sceglie per **Canta e controlla**.
 - **Cantata o suonata:** ogni voce può essere **suonata** al pianoforte invece che cantata, per imparare le note senza le parole. È istantanea e non serve un cantante.
 - **Accompagnamento:** se la partitura ha parti senza testo (organo, pianoforte), Muse Sing le suona tutte, accordi compresi. Si attiva o disattiva con la casella. All'inizio suona un organo semplice; con **Scarica strumenti veri** (31 MB, una volta sola) Muse Sing scarica gli strumenti di GeneralUser GS e puoi scegliere per ogni parte organo a canne, armonium, pianoforte, archi, flauto, chitarra o arpa. Lo strumento proposto dipende dal nome della parte. Dopo il download o un cambio di strumento serve **Genera audio** (le voci già cantate si riusano, quindi è veloce).
 - **Metronomo:** con la casella si sente un colpo per ogni battito, più forte sul primo della battuta; nei 6/8, 9/8 e 12/8 batte le semiminime puntate. Ha volume e pan come le altre tracce e si accende o spegne senza rigenerare.
@@ -88,6 +88,31 @@ Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo rico
 Le voci già generate con le stesse scelte vengono riusate: se cambi il cantante di una sola voce, si rigenera solo quella, e dopo un ritocco solo le frasi toccate. Se cambi voci, cantanti, lingua, intonazione, velocità o ritocchi dopo aver generato, Muse Sing chiede di generare di nuovo.
 
 **Avvisi di pronuncia.** Sotto il lettore, «avvisi di pronuncia» elenca le parole che il cantante non sa dire del tutto (un suono che non ha). Di solito la parola si sente lo stesso, con quel suono saltato.
+
+### Canta e controlla
+
+Per provare la tua parte e vedere come è andata, nota per nota.
+
+1. Genera l'audio e scegli **la mia voce** accanto alla tua parte.
+2. **Mettiti le cuffie.** Senza cuffie il microfono sente anche le altre voci e il risultato non vale. Microfono e cuffie sono quelli scelti in **Registra un cantante** (la prima volta il Mac chiede il permesso per il microfono).
+3. Scegli cosa cantare. Di solito si parte dal cursore e si arriva alla fine; se trascini sul righello del rullo, invece, canti solo quel tratto.
+4. Scegli come sentire **la tua voce nella base**: **muta** (canti da solo sopra le altre), **piano** (una traccia guida bassa) o **normale**.
+5. Premi **Canta**. Prima senti la battuta di conteggio, poi la musica, e intanto canti la tua parte. **Ferma** chiude prima la prova; si valuta quello che hai cantato fin lì.
+
+Dopo la prova le note della tua parte nel rullo cambiano colore:
+- **verde:** intonata, entro un quarto di semitono (25 cent);
+- **giallo:** quasi, tra 25 e 50 cent;
+- **rosso:** stonata, oltre 50 cent;
+- **bordo rosso:** non cantata.
+
+La **linea azzurra** è la tua voce. Il riepilogo dice quante note sono intonate, se tendi a calare o a crescere e quali battute riprendere. **Riascolta** fa sentire la tua registrazione sopra la base.
+
+Cosa sapere:
+- Ogni nota si valuta sulla parte centrale, senza l'attacco.
+- L'ottava non conta: un uomo che canta la parte del soprano un'ottava sotto è intonato.
+- Le note molto brevi non si valutano.
+- Muse Sing compensa da solo un piccolo ritardo del microfono o delle cuffie Bluetooth.
+- La registrazione resta in memoria solo fino alla prova successiva e non si salva nel progetto.
 
 ### Ritocchi
 

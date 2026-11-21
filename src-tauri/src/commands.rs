@@ -645,6 +645,173 @@ pub async fn sing_play(
     Ok(job)
 }
 
+// ---------------------------------------------------------------------------------------------
+// «Canta e controlla»
+
+/// The last check's recording, to listen to it over the music (in memory only).
+pub struct CheckTake {
+    /// At `SAMPLE_RATE`.
+    samples: Vec<f32>,
+    /// Score seconds of `samples[0]`.
+    offset: f64,
+    range: (f64, f64),
+}
+
+#[derive(Default)]
+pub struct CheckState(pub Arc<Mutex<Option<CheckTake>>>);
+
+#[derive(Serialize, Clone)]
+pub struct CheckProgress {
+    pub job: u64,
+    /// Score seconds (stays at the start during the count-in).
+    pub t: f64,
+    pub counting: bool,
+    /// Microphone peak, 0..1.
+    pub level: f32,
+}
+
+#[derive(Serialize, Clone)]
+pub struct CheckDone {
+    pub job: u64,
+    pub part: String,
+    pub notes: Vec<crate::check::NoteCheck>,
+    /// Sung pitch (score seconds, MIDI), moved by octaves next to the notes.
+    pub line: Vec<(f64, f32)>,
+    /// The stretch actually sung (score seconds).
+    pub range: (f64, f64),
+    /// Delay of the voice found and compensated, seconds.
+    pub lag: f64,
+    pub error: Option<String>,
+}
+
+/// Plays the mix from `from_sec` (to `to_sec` or the end) after a count-in and records the
+/// microphone; then compares the voice with the notes of `part` (`sing-check` / `sing-check-done`).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // the arguments of a Tauri command
+pub async fn sing_check(
+    app: tauri::AppHandle,
+    audio: State<'_, AudioState>,
+    state: State<'_, SingState>,
+    takes: State<'_, CheckState>,
+    mix: Vec<MixPart>,
+    part: String,
+    from_sec: f64,
+    to_sec: Option<f64>,
+    ambience: Option<Ambience>,
+    reverb: Option<f32>,
+) -> Result<u64> {
+    let (sing, engine, takes) = (state.0.clone(), audio.0.clone(), takes.0.clone());
+    let notes = sing.melody(&part).ok_or_else(|| Error::Other(format!("{part}: genera prima l'audio")))?;
+    let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
+    let sr = crate::ds::render::SAMPLE_RATE;
+    let total = l.len() as f64 / sr as f64;
+    let from = from_sec.clamp(0.0, total);
+    let to = to_sec.unwrap_or(total).clamp(from, total);
+    if to - from < 1.0 {
+        return Err(Error::Other("il tratto da cantare è troppo corto".into()));
+    }
+    let pre = sing.count_in(from);
+    let lead = pre.len() as f64 / sr as f64;
+    let (i, j) = ((from * sr as f64) as usize, ((to * sr as f64) as usize).min(l.len()));
+    let l: Vec<f32> = pre.iter().chain(&l[i..j]).copied().collect();
+    let r: Vec<f32> = pre.iter().chain(&r[i..j]).copied().collect();
+    let job = blocking({
+        let engine = engine.clone();
+        move || {
+            engine.ensure(true)?;
+            Ok(engine.begin_job(true))
+        }
+    })
+    .await?;
+    *state.1.lock().unwrap_or_else(|e| e.into_inner()) = job;
+    std::thread::spawn(move || {
+        let progress = |t: f64, _total: f64, level: f32| {
+            let _ = app.emit("sing-check", CheckProgress { job, t: (from - lead + t).max(from), counting: t < lead, level });
+        };
+        let res = engine.play_and_record(job, &l, &r, sr, &progress);
+        engine.end_job(job);
+        let mut done = CheckDone { job, part, notes: vec![], line: vec![], range: (from, from), lag: 0.0, error: None };
+        match res {
+            Ok(None) => done.error = Some(String::new()), // replaced by something else: nothing to show
+            Err(e) => done.error = Some(e.to_string()),
+            Ok(Some(rec)) => {
+                let offset = from - lead;
+                let heard = rec.samples.len() as f64 / rec.sample_rate as f64;
+                let range = (from, (offset + heard).min(to));
+                let track = crate::pitch::analyze(&rec.samples, rec.sample_rate);
+                let lag = crate::check::best_lag(&notes, &track, offset, range);
+                let at = offset - lag;
+                done.notes = crate::check::compare(&notes, &track, at, range);
+                done.line = crate::check::sung_line(&notes, &track, at, range);
+                done.range = range;
+                done.lag = lag;
+                crate::log!("canta e controlla: {} note in {:.1}-{:.1} s, ritardo {:.0} ms", done.notes.len(), range.0, range.1, lag * 1000.0);
+                let samples = audio::resample(&rec.samples, rec.sample_rate, sr);
+                *takes.lock().unwrap_or_else(|e| e.into_inner()) = Some(CheckTake { samples, offset: at, range });
+            }
+        }
+        let _ = app.emit("sing-check-done", done);
+    });
+    Ok(job)
+}
+
+/// Plays the last check's stretch with the recorded voice over the mix (`sing-play` events).
+#[tauri::command]
+pub async fn sing_check_replay(
+    app: tauri::AppHandle,
+    audio: State<'_, AudioState>,
+    state: State<'_, SingState>,
+    takes: State<'_, CheckState>,
+    mix: Vec<MixPart>,
+    ambience: Option<Ambience>,
+    reverb: Option<f32>,
+) -> Result<u64> {
+    let (sing, engine) = (state.0.clone(), audio.0.clone());
+    let (l, r, from, total) = {
+        let take = takes.0.lock().unwrap_or_else(|e| e.into_inner());
+        let take = take.as_ref().ok_or_else(|| Error::Other("canta prima un tratto".into()))?;
+        let (mut l, mut r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
+        let sr = crate::ds::render::SAMPLE_RATE as f64;
+        let total = l.len() as f64 / sr;
+        // the voice brought to a clear level, centred
+        let peak = take.samples.iter().fold(0f32, |m, x| m.max(x.abs()));
+        let gain = if peak > 1e-4 { 0.6 / peak } else { 1.0 };
+        for (k, x) in take.samples.iter().enumerate() {
+            let at = take.offset * sr + k as f64;
+            if at < 0.0 {
+                continue;
+            }
+            let at = at as usize;
+            if at >= l.len() {
+                l.resize(at + 1, 0.0);
+                r.resize(at + 1, 0.0);
+            }
+            l[at] += x * gain;
+            r[at] += x * gain;
+        }
+        let (i, j) = ((take.range.0 * sr) as usize, ((take.range.1 * sr) as usize).min(l.len()));
+        (l[i..j].to_vec(), r[i..j].to_vec(), take.range.0, total)
+    };
+    let job = blocking({
+        let engine = engine.clone();
+        move || {
+            engine.ensure(false)?;
+            Ok(engine.begin_job(false))
+        }
+    })
+    .await?;
+    *state.1.lock().unwrap_or_else(|e| e.into_inner()) = job;
+    std::thread::spawn(move || {
+        let progress = |t: f64, _: f64| {
+            let _ = app.emit("sing-play", PlayProgress { job, t: from + t, total });
+        };
+        let res = engine.play_stereo(job, &l, &r, crate::ds::render::SAMPLE_RATE, 0.0, None, &progress);
+        engine.end_job(job);
+        let _ = app.emit("sing-play-done", PlayDone { job, error: res.err().map(|e| e.to_string()) });
+    });
+    Ok(job)
+}
+
 /// Stops the mix playback (not a recording started meanwhile).
 #[tauri::command]
 pub fn sing_stop(audio: State<AudioState>, state: State<SingState>) {

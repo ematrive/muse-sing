@@ -1,5 +1,6 @@
 pub mod accomp;
 pub mod audio;
+pub mod check;
 pub mod commands;
 pub mod corpus;
 pub mod ds;
@@ -12,6 +13,7 @@ pub mod lyrics;
 pub mod marks;
 pub mod mix;
 pub mod musicxml;
+pub mod pitch;
 pub mod project;
 pub mod score;
 pub mod sing;
@@ -33,6 +35,7 @@ pub fn run() {
             use tauri::Manager;
             app.manage(commands::AudioState::new(app.handle().clone()));
             app.manage(commands::SingState::new(app.handle()));
+            app.manage(commands::CheckState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -59,6 +62,8 @@ pub fn run() {
             commands::sing_track_info,
             commands::sing_play,
             commands::sing_stop,
+            commands::sing_check,
+            commands::sing_check_replay,
             commands::sing_export,
             commands::sing_export_guides,
             commands::project_new,

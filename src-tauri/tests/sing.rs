@@ -416,3 +416,70 @@ fn latin_words_with_a_real_voicebank() {
         assert_eq!(n, group.len(), "{}: {:?}", pnotes[group[0]].lyric, ph.phones.iter().filter(|p| p.group == g).map(|p| &p.symbol).collect::<Vec<_>>());
     }
 }
+
+/// «Canta e controlla» on a real voice: Tiger singing exactly on the notes is judged in tune, the
+/// same raised by 40 cents «quasi».
+#[test]
+fn checks_a_rendered_voice() {
+    use muse_sing_lib::check::{compare, Verdict};
+    let Some(vb) = std::env::var_os("MUSESING_TEST_VOICEBANK").map(PathBuf::from) else {
+        eprintln!("MUSESING_TEST_VOICEBANK not set: skipped");
+        return;
+    };
+    let score = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/agnello.mscz");
+    if !score.exists() {
+        eprintln!("fixture missing: skipped");
+        return;
+    }
+    let singer = SingerInfo {
+        id: "test".into(),
+        name: "test".into(),
+        singer_type: "diffsinger".into(),
+        langs: vec![],
+        path: vb.to_string_lossy().into_owned(),
+        openutau: false,
+        engine: true,
+        engine_note: None,
+        colors: vec![],
+    };
+    let cache = std::env::temp_dir().join(format!("muse-sing-check-{}", std::process::id()));
+    let sing = Sing::new(Some(cache.clone()));
+    let mut req = RenderRequest {
+        path: score.to_string_lossy().into_owned(),
+        lang: Lang::It,
+        pitch: "notes".into(),
+        parts: vec![PartReq { name: "Soprano".into(), singer: "test".into(), color: None, voices: 1, played: false }],
+        tempo_factor: 1.0,
+        accompaniment: false,
+        edits: Default::default(),
+        instruments: Default::default(),
+        marks: true,
+        transpose: 0,
+        soundfont: None,
+    };
+    for (cents, expected) in [(0.0f32, Verdict::InTune), (40.0, Verdict::Almost)] {
+        if cents != 0.0 {
+            let mut e = muse_sing_lib::edits::PartEdits::default();
+            e.pitch = muse_sing_lib::edits::Curve((0..40_000).map(|k| (k * 5, cents)).collect());
+            req.edits.insert("Soprano".into(), e);
+        }
+        let job = sing.begin();
+        sing.run(job, &req, std::slice::from_ref(&singer), &|_| {}).unwrap().expect("not cancelled");
+        let voice = sing.with_tracks(|t| t.iter().find(|(n, _)| n == "Soprano").unwrap().1.to_vec()).unwrap();
+        let track = muse_sing_lib::pitch::analyze(&voice, muse_sing_lib::ds::render::SAMPLE_RATE);
+        let notes = sing.melody("Soprano").unwrap();
+        let got = compare(&notes, &track, 0.0, (0.0, 1e9));
+        let judged: Vec<_> = got.iter().filter(|c| c.verdict != Verdict::NotJudged).collect();
+        let hits = judged.iter().filter(|c| c.verdict == expected).count();
+        let mut cs: Vec<f32> = judged.iter().filter_map(|c| c.cents).collect();
+        cs.sort_by(|a, b| a.total_cmp(b));
+        let median = cs[cs.len() / 2];
+        let missed = judged.iter().filter(|c| c.verdict == Verdict::Missed).count();
+        eprintln!("+{cents} c: {hits} of {} judged {expected:?}, {missed} missed, median {median:.1} c", judged.len());
+        assert!(judged.len() * 10 >= got.len() * 8, "most notes judged");
+        assert!(hits * 100 >= judged.len() * 75, "+{cents} c: {hits} of {}", judged.len());
+        assert!((median - cents).abs() < 12.0, "+{cents} c: median {median}");
+        assert!(missed * 20 <= judged.len(), "a voice everywhere: {missed} missed");
+    }
+    std::fs::remove_dir_all(cache).ok();
+}

@@ -101,6 +101,7 @@ cd src-tauri && cargo test   # test del motore (su Linux serve libasound2-dev pe
 - `src-tauri/src/score.rs`: lettura del `.mscz` e riconoscimento del formato (`read_score`), ordine di esecuzione (ritornelli, salti), id stabile di ogni nota; `musicxml.rs`: lettura di MusicXML (`.musicxml`/`.mxl`) con la stessa disposizione (`assemble`).
 - `src-tauri/src/fx.rs`: riverbero (Freeverb) per l'ambiente del mix.
 - `src-tauri/src/marks.rs`: segni della partitura (dinamiche, forcelle, respiri, corone, rit./accel.) e trasposizione, applicati allo stesso modo al canto e al rullo.
+- `src-tauri/src/pitch.rs`: intonazione di una registrazione (YIN); `check.rs`: «Canta e controlla», il confronto nota per nota con la parte (ottava più vicina, ritardo compensato).
 - `src-tauri/src/instruments.rs`: strumenti da SoundFont (GeneralUser GS, scaricato a richiesta dalla release `soundfont-1`) con `rustysynth`; `accomp.rs`: accompagnamento (tutte le note, accordi compresi), voce suonata, metronomo e conteggio.
 - `src-tauri/src/tiger.rs`: download di TIGER DS dalla release ufficiale e installazione del voicebank (lo zip dentro il pacchetto) nella cartella Singers.
 - `src-tauri/src/lyrics.rs`: sillabe → parole, pulizia, regole italiane, eccezioni inglesi, riconoscimento della lingua (per parole intere); `latin.rs`: latino ecclesiastico nei simboli G2p italiani, una vocale per sillaba.

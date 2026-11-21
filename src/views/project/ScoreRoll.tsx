@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { RollBar, RollPart } from "../../lib/api";
+import type { RollBar, RollPart, Verdict } from "../../lib/api";
 import { BarGrid } from "./bars";
+import { VERDICT_CLASS } from "./Check";
+
+/** The result of «Canta e controlla» drawn on a part: coloured notes and the sung pitch. */
+export type RollCheck = { part: string; verdicts: Record<string, Verdict>; line: [number, number][] };
 
 const RULER = 20;
 const LANE = 58;
@@ -26,6 +30,7 @@ export function ScoreRoll({
   loop,
   onSeek,
   onLoop,
+  check,
 }: {
   parts: RollPart[];
   /** measures as played; without them the grid is in seconds */
@@ -36,6 +41,7 @@ export function ScoreRoll({
   loop: [number, number] | null;
   onSeek: (sec: number) => void;
   onLoop: (range: [number, number] | null) => void;
+  check?: RollCheck | null;
 }) {
   const [zoom, setZoom] = useState(70); // px per second
   const scroller = useRef<HTMLDivElement>(null);
@@ -163,6 +169,18 @@ export function ScoreRoll({
               const room = LANE - 22 - noteH;
               const yOf = (pitch: number) => top + room * (1 - (pitch - lo) / span);
               const mine = p.name === highlight;
+              const checked = check?.part === p.name ? check : null;
+              // the sung pitch, broken where the voice stops
+              const segments: [number, number][][] = [];
+              if (checked) {
+                let prev = -1;
+                for (const pt of checked.line) {
+                  if (pt[0] - prev > 0.05 || segments.length === 0) segments.push([]);
+                  segments[segments.length - 1].push(pt);
+                  prev = pt[0];
+                }
+              }
+              const clampY = (m: number) => Math.max(y0 + 1, Math.min(y0 + LANE - 16, yOf(m) + noteH / 2));
               return (
                 <g key={p.name}>
                   <rect
@@ -182,7 +200,15 @@ export function ScoreRoll({
                         width={Math.max(2, x(n.end) - x(n.start) - 1)}
                         height={noteH}
                         rx={2}
-                        className={mine ? "fill-violet-600" : p.sung ? "fill-zinc-400 dark:fill-zinc-500" : "fill-zinc-300 dark:fill-zinc-700"}
+                        className={
+                          checked?.verdicts[n.id] && checked.verdicts[n.id] !== "not_judged"
+                            ? VERDICT_CLASS[checked.verdicts[n.id]]
+                            : mine
+                              ? "fill-violet-600"
+                              : p.sung
+                                ? "fill-zinc-400 dark:fill-zinc-500"
+                                : "fill-zinc-300 dark:fill-zinc-700"
+                        }
                       />
                       {p.sung && n.lyric && zoom >= 25 && (
                         <text
@@ -194,6 +220,15 @@ export function ScoreRoll({
                         </text>
                       )}
                     </g>
+                  ))}
+                  {segments.map((seg, k) => (
+                    <polyline
+                      key={`line${k}`}
+                      points={seg.map(([t, m]) => `${x(t).toFixed(1)},${clampY(m).toFixed(1)}`).join(" ")}
+                      className="fill-none stroke-sky-500"
+                      strokeWidth={1.5}
+                      pointerEvents="none"
+                    />
                   ))}
                 </g>
               );

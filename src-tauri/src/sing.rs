@@ -185,6 +185,8 @@ pub struct Sing {
     /// Beats (seconds, first of the measure) and sung notes (start, end, pitch) of the last
     /// render, for the count-in.
     timeline: Mutex<Timeline>,
+    /// Notes of every part of the last render (seconds, after transposition), for «Canta e controlla».
+    melodies: Mutex<HashMap<String, Vec<crate::check::RefNote>>>,
     voicebanks: Mutex<HashMap<PathBuf, Arc<Voicebank>>>,
     cache_dir: Option<PathBuf>,
 }
@@ -216,6 +218,7 @@ impl Sing {
             info: Mutex::new(HashMap::new()),
             title: Mutex::new(String::new()),
             timeline: Mutex::new((vec![], vec![])),
+            melodies: Mutex::new(HashMap::new()),
             voicebanks: Mutex::new(HashMap::new()),
             cache_dir: cache_dir.map(|d| d.join("render")),
         }
@@ -252,6 +255,11 @@ impl Sing {
     pub fn count_in(&self, from: f64) -> Vec<f32> {
         let t = lock(&self.timeline);
         crate::accomp::count_in(&t.0, &t.1, from, ds::render::SAMPLE_RATE)
+    }
+
+    /// The notes of a part of the last render, in seconds.
+    pub fn melody(&self, part: &str) -> Option<Vec<crate::check::RefNote>> {
+        lock(&self.melodies).get(part).cloned()
     }
 
     /// Words, phonemes and pitch of a part of the last render.
@@ -528,6 +536,19 @@ impl Sing {
         }
         let sung: Vec<(f64, f64, i32)> = req.parts.iter().flat_map(|p| melody(&p.name)).collect();
         *lock(&self.timeline) = (beats, sung);
+        let melodies = sc
+            .parts
+            .iter()
+            .filter(|p| req.parts.iter().any(|r| r.name == p.name))
+            .map(|p| {
+                let notes = p
+                    .notes
+                    .iter()
+                    .map(|n| crate::check::RefNote { id: n.id.clone(), start: secs(n.start), end: secs(n.start + n.dur), pitch: n.pitch })
+                    .collect();
+                (p.name.clone(), notes)
+            })
+            .collect();
         if tracks.is_empty() {
             return Err(Error::Other("niente da suonare: la partitura non ha né voci scelte né parti strumentali".into()));
         }
@@ -535,6 +556,7 @@ impl Sing {
         *lock(&self.tracks) = tracks;
         *lock(&self.info) = infos;
         *lock(&self.title) = project.name.clone();
+        *lock(&self.melodies) = melodies;
         let _ = self.job.compare_exchange(job, 0, Ordering::Relaxed, Ordering::Relaxed);
         if let Some(d) = &self.cache_dir {
             trim_cache(d, CACHE_MAX_BYTES);

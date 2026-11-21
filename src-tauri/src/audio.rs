@@ -906,6 +906,85 @@ impl Engine {
         Ok(())
     }
 
+    /// Plays a stereo buffer once and records the microphone over it («Canta e controlla»).
+    /// `stop` ends it early and keeps what was sung; another job replacing it gives None. Sample 0
+    /// of the result is the moment frame 0 of the buffer is heard. `progress(t, total, level)`.
+    pub fn play_and_record(&self, id: u64, left: &[f32], right: &[f32], sr: u32, progress: &dyn Fn(f64, f64, f32)) -> Result<Option<Recorded>> {
+        let (rate, in_rate, ch) = {
+            let io = lock(&self.io);
+            let out = io.output.as_ref().ok_or_else(|| Error::Other("uscita audio chiusa".into()))?;
+            let inp = io.input.as_ref().ok_or_else(|| Error::Other("il microfono non è aperto".into()))?;
+            (out.rate, inp.rate, inp.channels.max(1))
+        };
+        let generation = self.generation.load(Ordering::Relaxed);
+        let (l, r) = (resample(left, sr, rate), resample(right, sr, rate));
+        let total = l.len() as f64 / rate as f64;
+        {
+            let mut c = lock(&self.capture);
+            c.samples = Vec::with_capacity(((total + 2.0) * in_rate as f64) as usize * ch);
+            c.owner = id;
+            c.recording = true;
+        }
+        let _rec = StopRecording(&self.capture, id);
+        let start = self.schedule_stereo(id, l, Some(r), 0, false, 1.0, false, rate);
+        let stopped = loop {
+            if !self.is_current(id) {
+                if self.job.load(Ordering::Relaxed) != 0 {
+                    return Ok(None); // another job took over
+                }
+                break true;
+            }
+            if self.out_broken.load(Ordering::Relaxed) || self.generation.load(Ordering::Relaxed) != generation {
+                return Err(Error::Other("l'audio si è interrotto (cuffie scollegate o riconfigurate?): riprova".into()));
+            }
+            if self.in_broken.load(Ordering::Relaxed) {
+                return Err(Error::Other("il microfono si è interrotto durante la registrazione: riprova".into()));
+            }
+            let t = self.heard(start, rate);
+            if t >= total {
+                break false;
+            }
+            progress(t.max(0.0), total, f32::from_bits(self.level.load(Ordering::Relaxed)));
+            std::thread::sleep(Duration::from_millis(30));
+        };
+        let heard = self.heard(start, rate).clamp(0.0, total);
+
+        // where frame 0 of the buffer is in the input
+        let (out_ts, mark) = {
+            let m = lock(&self.mixer);
+            (m.ts, m.marks.iter().find(|(v, _)| *v == id).map(|(_, f)| *f))
+        };
+        let in_ts = lock(&self.capture).ts;
+        let by_ts = match (out_ts, in_ts) {
+            (Some(o), Some(i)) => align_input_frame(start, o, rate, i, in_rate),
+            _ => None,
+        };
+        let click = choose_click_frame(by_ts, mark, in_rate).ok_or_else(|| Error::Other("registrazione non allineabile: riprova".into()))?;
+        let to = click + (heard * in_rate as f64) as u64;
+        if !stopped {
+            // wait for the input to deliver the last frames
+            let t0 = Instant::now();
+            while t0.elapsed() < Duration::from_millis(1500) {
+                let c = lock(&self.capture);
+                if c.start_frame + (c.samples.len() / ch) as u64 >= to {
+                    break;
+                }
+                drop(c);
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+        let (all, first) = {
+            let mut c = lock(&self.capture);
+            if c.owner != id {
+                return Ok(None);
+            }
+            c.recording = false;
+            (std::mem::take(&mut c.samples), c.start_frame)
+        };
+        let samples = trim_take(&all, first, ch, click, LEAD_IN, heard, in_rate);
+        Ok(Some(Recorded { samples, sample_rate: in_rate }))
+    }
+
     /// One note, to check a pitch (refused while recording). Replaces the previous note.
     pub fn play_note(&self, pitch: i32, secs: f64) -> Result<()> {
         if self.job_kind.load(Ordering::Relaxed) == KIND_TAKE {

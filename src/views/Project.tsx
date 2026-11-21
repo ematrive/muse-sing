@@ -56,6 +56,8 @@ import {
   type PartCfg,
   type PitchMode,
   type PlayDone,
+  type CheckDone,
+  type CheckProgress,
   type PlayProgress,
   type Project as ProjectData,
   type PartEdits,
@@ -68,6 +70,7 @@ import {
   type TigerProgress,
 } from "../lib/api";
 import { Editor } from "./project/Editor";
+import { CheckPanel, OWN_VOICE_DB, summarize, type OwnVoice } from "./project/Check";
 import { ScoreRoll } from "./project/ScoreRoll";
 
 function fmtDuration(sec: number) {
@@ -204,6 +207,11 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const renderJobRef = useRef<number | null>(null);
   renderJobRef.current = renderJob;
   const playJobRef = useRef(0);
+  // «Canta e controlla»
+  const checkJobRef = useRef(0);
+  const [checking, setChecking] = useState<CheckProgress | null>(null);
+  const [checkResult, setCheckResult] = useState<CheckDone | null>(null);
+  const [ownVoice, setOwnVoice] = useState<OwnVoice>("muta");
   const playingRef = useRef(play);
   playingRef.current = play;
   const seekTimer = useRef<number | undefined>(undefined);
@@ -419,6 +427,19 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
       listen<PlayProgress>("sing-play", (e) => {
         if (e.payload.job === playJobRef.current) setPlay(e.payload);
       }),
+      listen<CheckProgress>("sing-check", (e) => {
+        if (e.payload.job === checkJobRef.current) setChecking(e.payload);
+      }),
+      listen<CheckDone>("sing-check-done", (e) => {
+        const d = e.payload;
+        if (d.job !== checkJobRef.current) return;
+        checkJobRef.current = 0;
+        setChecking(null);
+        if (d.error === "") return;
+        if (d.error) return setError(d.error);
+        setCheckResult(d);
+        setCursor(d.range[0]);
+      }),
       listen<PlayDone>("sing-play-done", (e) => {
         if (e.payload.job !== playJobRef.current) return;
         const p = playingRef.current;
@@ -478,7 +499,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const rendering = renderJob !== null;
   const diffsinger = (singers?.singers ?? []).filter((s) => s.singer_type === "diffsinger");
   const total = rendered?.seconds ?? 0;
-  const pos = play ? play.t : cursor;
+  const pos = play ? play.t : checking ? checking.t : cursor;
   const nothing = sung.length === 0 && !accompOn;
 
   // --- actions -----------------------------------------------------------------------------------
@@ -613,6 +634,53 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   }, [applyFrom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopPlay = () => singApi.stop();
+
+  // --- «Canta e controlla» ---
+  const mineSung = sung.some((p) => p.name === mine) ? mine : null;
+  // the result belongs to this render: a new tempo, key or edit moves the notes
+  useEffect(() => setCheckResult(null), [sig, mineSung]);
+  /** The mix with your own part muted or softer. */
+  const checkMix = (): MixPart[] =>
+    mix.map((p) => {
+      if (p.name !== mineSung) return { ...p, solo: false };
+      const db = OWN_VOICE_DB[ownVoice];
+      return db === null ? { ...p, mute: true, solo: false } : { ...p, volume_db: p.volume_db + db, solo: false };
+    });
+  const barNumberAt = (sec: number) => {
+    const b = (roll?.bars ?? []).filter((x) => x.start <= sec + 1e-6).pop();
+    return b?.number ?? null;
+  };
+  const stretch = (() => {
+    const [a, b] = loop ?? [cursor, null];
+    const na = barNumberAt(a);
+    const from = a < 0.05 ? "dall'inizio" : na ? `dalla battuta ${na}` : `da ${fmtDuration(a)}`;
+    const nb = b === null ? null : barNumberAt(b);
+    return `${from} ${b === null ? "alla fine" : nb ? `alla battuta ${nb}` : `a ${fmtDuration(b)}`}`;
+  })();
+  const startCheck = async () => {
+    if (!mineSung) return;
+    setError(null);
+    try {
+      if (play) await singApi.stop();
+      const [a, b] = loop ?? [cursor, null];
+      const job = await singApi.check(checkMix(), mineSung, a, b, room);
+      checkJobRef.current = job;
+      setChecking({ job, t: a, counting: true, level: 0 });
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+  const replayCheck = async () => {
+    setError(null);
+    try {
+      const job = await singApi.checkReplay(checkMix(), room);
+      playJobRef.current = job;
+      setPlay({ job, t: checkResult?.range[0] ?? 0, total: rendered?.seconds ?? 0 });
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+  const checkSummary = checkResult ? summarize(checkResult, roll?.parts.find((p) => p.name === checkResult.part), roll?.bars ?? []) : null;
 
   // volume / pan / mute / solo / loop changed while playing: start again from the same point
   const loopKey = JSON.stringify(loop);
@@ -1242,9 +1310,16 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                 parts={roll.parts}
                 bars={roll.bars ?? []}
                 cursor={pos}
-                playing={!!play}
+                playing={!!play || !!checking}
                 highlight={mine}
                 loop={loop}
+                check={
+                  checkResult && {
+                    part: checkResult.part,
+                    verdicts: Object.fromEntries(checkResult.notes.map((n) => [n.id, n.verdict])),
+                    line: checkResult.line,
+                  }
+                }
                 onSeek={seek}
                 onLoop={(r) => {
                   setLoop(r);
@@ -1252,6 +1327,24 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                 }}
               />
             </section>
+          )}
+
+          {roll && rendered && upToDate && sung.length > 0 && (
+            <CheckPanel
+              mine={mineSung}
+              ownVoice={ownVoice}
+              onOwnVoice={setOwnVoice}
+              checking={checking ? checking.counting : null}
+              level={checking?.level ?? 0}
+              result={checkResult}
+              summary={checkSummary}
+              stretch={stretch}
+              onStart={startCheck}
+              onStop={() => singApi.stop()}
+              onReplay={replayCheck}
+              onClear={() => setCheckResult(null)}
+              disabled={rendering || exporting}
+            />
           )}
 
           {roll && rendered && sung.length > 0 && (

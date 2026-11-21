@@ -66,6 +66,13 @@ pub struct PartCfg {
     pub mute: bool,
     #[serde(default)]
     pub solo: bool,
+    /// Singers in the section (1 = a soloist).
+    #[serde(default = "default_voices")]
+    pub voices: u8,
+}
+
+fn default_voices() -> u8 {
+    1
 }
 
 /// The instrumental parts, played by a simple organ sound.
@@ -114,6 +121,9 @@ pub struct Project {
     /// Pronunciation and curve edits per part.
     #[serde(default)]
     pub edits: HashMap<String, PartEdits>,
+    /// Room ambience of the mix (dry in projects saved before it existed).
+    #[serde(default)]
+    pub ambience: crate::fx::Ambience,
 }
 
 impl Project {
@@ -128,6 +138,7 @@ impl Project {
             parts,
             accompaniment: AccompCfg { enabled: has_instruments, ..AccompCfg::default() },
             edits: HashMap::new(),
+            ambience: crate::fx::Ambience::Chiesa,
         }
     }
 }
@@ -204,7 +215,7 @@ mod tests {
     use super::*;
 
     fn part(name: &str) -> PartCfg {
-        PartCfg { name: name.into(), sing: true, singer: "s".into(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false }
+        PartCfg { name: name.into(), sing: true, singer: "s".into(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false, voices: 1 }
     }
 
     #[test]
@@ -237,6 +248,12 @@ mod tests {
         assert_eq!(p.tempo_factor, 1.0);
         assert_eq!(p.pitch, "model");
         assert!(p.parts[0].sing && !p.accompaniment.enabled);
+        assert_eq!(p.parts[0].voices, 1);
+        assert_eq!(p.ambience, crate::fx::Ambience::Nessuno, "saved projects keep their dry sound");
+        let n = Project::new("t", "s.mscz", Lang::It, vec![], false);
+        assert_eq!(n.ambience, crate::fx::Ambience::Chiesa);
+        let back: Project = serde_json::from_str(&serde_json::to_string(&n).unwrap()).unwrap();
+        assert_eq!(back, n);
     }
 
     #[test]

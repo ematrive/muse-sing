@@ -28,6 +28,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ACCOMPANIMENT,
+  AMBIENCES,
   api,
   isProjectPath,
   isScorePath,
@@ -39,6 +40,7 @@ import {
   LANGS,
   projectApi,
   singApi,
+  type Ambience,
   type Lang,
   dictLang,
   type MixPart,
@@ -407,7 +409,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const singerOf = (p: PartCfg) => singers?.singers.find((s) => s.id === p.singer);
   const hasInstruments = !!analysis?.parts.some((p) => !p.sung);
   const accompOn = !!project?.accompaniment.enabled && hasInstruments;
-  const renderParts = sung.map((p) => ({ name: p.name, singer: p.singer, color: p.color }));
+  const renderParts = sung.map((p) => ({ name: p.name, singer: p.singer, color: p.color, voices: p.voices ?? 1 }));
   const renderEdits: Record<string, PartEdits> = Object.fromEntries(sung.filter((p) => project?.edits[p.name]).map((p) => [p.name, project!.edits[p.name]]));
   const sig =
     project && opened ? JSON.stringify([opened.score_path, project.lang, project.pitch, project.tempo_factor, accompOn, renderParts, renderEdits]) : "";
@@ -420,7 +422,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     m.push({ name: ACCOMPANIMENT, volume_db: a.volume_db, pan: a.pan, mute: a.mute, solo: a.solo });
     return m;
   }, [project]);
-  const mixKey = JSON.stringify(mix);
+  const ambience: Ambience = project?.ambience ?? "nessuno";
+  const mixKey = JSON.stringify([mix, ambience]);
   const missingSinger = sung.filter((p) => !singerOf(p));
   const notEngine = sung.filter((p) => singerOf(p) && !singerOf(p)!.engine);
   const rendering = renderJob !== null;
@@ -532,7 +535,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     async (from: number, range: [number, number] | null) => {
       setError(null);
       try {
-        const job = await singApi.play(JSON.parse(mixKey) as MixPart[], from, range);
+        const [m, amb] = JSON.parse(mixKey) as [MixPart[], Ambience];
+        const job = await singApi.play(m, from, range, amb);
         playJobRef.current = job;
         setPlay({ job, t: from, total: rendered?.seconds ?? 0 });
       } catch (e) {
@@ -597,7 +601,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     const path = /\.(mp3|flac|wav)$/i.test(out) ? out : `${out}.mp3`;
     setExporting(true);
     try {
-      const written = await singApi.export(mix, path);
+      const written = await singApi.export(mix, path, ambience);
       setNotice({ text: `Esportato: ${baseName(written)}`, path: written });
     } catch (e) {
       setError(errorText(e));
@@ -613,7 +617,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     if (typeof dir !== "string") return;
     setExporting(true);
     try {
-      const files = await singApi.exportGuides(mix, dir, "mp3", guideDb);
+      const files = await singApi.exportGuides(mix, dir, "mp3", guideDb, ambience);
       setNotice({ text: `Basi di studio: ${files.length} file MP3 in ${baseName(dir)}`, path: files[0] });
     } catch (e) {
       setError(errorText(e));
@@ -719,7 +723,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
             </section>
           )}
 
-          <section className="card grid gap-4 sm:grid-cols-3">
+          <section className="card grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <label className="label">Lingua del testo</label>
               <select className="field" aria-label="Lingua del testo" value={project.lang} onChange={(e) => setProject((p) => ({ ...p, lang: e.target.value as Lang }))} disabled={rendering}>
@@ -750,6 +754,22 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                 {TEMPOS.map((t) => (
                   <option key={t} value={t}>
                     {t === 1 ? "100% (come scritto)" : `${Math.round(t * 100)}% (per studiare)`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Ambiente</label>
+              <select
+                className="field"
+                aria-label="Ambiente"
+                title="Il riverbero di una stanza o di una chiesa, in ascolto e nei file esportati"
+                value={ambience}
+                onChange={(e) => setProject((p) => ({ ...p, ambience: e.target.value as Ambience }))}
+              >
+                {Object.entries(AMBIENCES).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
                   </option>
                 ))}
               </select>
@@ -845,6 +865,18 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                             ))}
                           </select>
                         )}
+                        <select
+                          className="field w-28 py-1"
+                          value={p.voices ?? 1}
+                          disabled={!p.sing || rendering}
+                          onChange={(e) => setPart(p.name, { voices: Number(e.target.value) })}
+                          title="Più coristi sulla stessa voce, ognuno con un colore diverso: suona come una sezione del coro. La generazione dura di più."
+                          aria-label={`Coristi di ${p.name}`}
+                        >
+                          <option value={1}>1 corista</option>
+                          <option value={2}>2 coristi</option>
+                          <option value={3}>3 coristi</option>
+                        </select>
                       </div>
                     </div>
                     {p.sing && (

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use crate::error::{Error, Result};
+use crate::fx::Ambience;
 use crate::lyrics::{detect_lang, word_lyrics, Lang};
 use crate::score::read_score;
 use crate::singers::{self, SingerInfo};
@@ -551,9 +552,10 @@ pub async fn sing_play(
     mix: Vec<MixPart>,
     from_sec: f64,
     loop_range: Option<(f64, f64)>,
+    ambience: Option<Ambience>,
 ) -> Result<u64> {
     let (sing, engine) = (state.0.clone(), audio.0.clone());
-    let (l, r) = sing.with_tracks(|t| mix::mix(t, &mix))?;
+    let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default()))?;
     let job = blocking({
         let engine = engine.clone();
         move || {
@@ -585,10 +587,10 @@ pub fn sing_stop(audio: State<AudioState>, state: State<SingState>) {
 
 /// Exports the mix; the format follows the extension (.mp3, .flac, .wav).
 #[tauri::command]
-pub async fn sing_export(state: State<'_, SingState>, mix: Vec<MixPart>, path: String) -> Result<String> {
+pub async fn sing_export(state: State<'_, SingState>, mix: Vec<MixPart>, path: String, ambience: Option<Ambience>) -> Result<String> {
     let sing = state.0.clone();
     blocking(move || {
-        let (l, r) = sing.with_tracks(|t| mix::mix(t, &mix))?;
+        let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default()))?;
         let title = sing.title();
         mix::export(Path::new(&path), &l, &r, crate::ds::render::SAMPLE_RATE, &title)?;
         Ok(path)
@@ -638,7 +640,7 @@ fn fresh_parts(a: &Analysis) -> Vec<PartCfg> {
     a.parts
         .iter()
         .filter(|p| p.sung)
-        .map(|p| PartCfg { name: p.name.clone(), sing: true, singer: String::new(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false })
+        .map(|p| PartCfg { name: p.name.clone(), sing: true, singer: String::new(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false, voices: 1 })
         .collect()
 }
 
@@ -832,7 +834,14 @@ fn file_safe(s: &str) -> String {
 /// Practice tracks: one file per sung part, with that part as mixed and the others lowered by
 /// `others_db` (the accompaniment stays as mixed). Returns the files written.
 #[tauri::command]
-pub async fn sing_export_guides(state: State<'_, SingState>, mix: Vec<MixPart>, dir: String, ext: String, others_db: f32) -> Result<Vec<String>> {
+pub async fn sing_export_guides(
+    state: State<'_, SingState>,
+    mix: Vec<MixPart>,
+    dir: String,
+    ext: String,
+    others_db: f32,
+    ambience: Option<Ambience>,
+) -> Result<Vec<String>> {
     let sing = state.0.clone();
     blocking(move || {
         let title = file_safe(&sing.title());
@@ -852,7 +861,7 @@ pub async fn sing_export_guides(state: State<'_, SingState>, mix: Vec<MixPart>, 
                     p
                 })
                 .collect();
-            let (l, r) = sing.with_tracks(|t| mix::mix(t, &parts))?;
+            let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience.unwrap_or_default()))?;
             let path = Path::new(&dir).join(format!("{title} - {}.{ext}", file_safe(name)));
             mix::export(&path, &l, &r, crate::ds::render::SAMPLE_RATE, &format!("{} ({name})", sing.title()))?;
             written.push(path.to_string_lossy().into_owned());

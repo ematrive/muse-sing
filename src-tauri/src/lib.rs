@@ -5,6 +5,7 @@ pub mod corpus;
 pub mod ds;
 pub mod edits;
 pub mod error;
+pub mod fx;
 pub mod latin;
 pub mod lyrics;
 pub mod mix;

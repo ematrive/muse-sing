@@ -31,6 +31,42 @@ pub struct PartReq {
     pub singer: String,
     /// Voice colour (subbank); None = the voicebank's first.
     pub color: Option<String>,
+    /// Singers in the section (1 = a soloist).
+    #[serde(default = "one_voice")]
+    pub voices: u8,
+}
+
+fn one_voice() -> u8 {
+    1
+}
+
+/// Most singers per part.
+pub const MAX_VOICES: usize = 3;
+/// (cents off, ms late) of each singer of a section: the first sings as rendered.
+const SECTION: [(f32, usize); MAX_VOICES] = [(0.0, 0), (7.0, 18), (-6.0, 11)];
+
+/// The colour of the `k`-th extra singer: spread over the voicebank's colours, starting after the
+/// chosen one (the same colour when there is only one).
+fn section_color(colors: &[String], chosen: Option<&str>, k: usize) -> Option<String> {
+    if colors.len() < 2 {
+        return chosen.map(str::to_string);
+    }
+    let first = chosen.and_then(|c| colors.iter().position(|x| x == c)).unwrap_or(0);
+    let step = (colors.len() / MAX_VOICES).max(1);
+    Some(colors[(first + k * step) % colors.len()].clone())
+}
+
+/// Adds one singer of a section to the sum, `delay_ms` late, at 1/√n so the section is about as
+/// loud as one voice.
+fn add_section_voice(sum: &mut Vec<f32>, voice: &[f32], delay_ms: usize, n: usize) {
+    let delay = delay_ms * ds::render::SAMPLE_RATE as usize / 1000;
+    let gain = 1.0 / (n as f32).sqrt();
+    if sum.len() < voice.len() + delay {
+        sum.resize(voice.len() + delay, 0.0);
+    }
+    for (i, &x) in voice.iter().enumerate() {
+        sum[i + delay] += x * gain;
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -301,91 +337,116 @@ impl Sing {
             let dir = PathBuf::from(&singer.path);
             let edits = req_edits.get(name.as_str()).unwrap_or(&no_edits);
             let notes_key: String = notes.iter().map(|n| format!("{},{},{},{},{};", n.id, n.position, n.duration, n.tone, n.lyric)).collect();
-            let salt = format!(
-                "{ENGINE_VERSION}|{}|{}|{}|{:?}|{:?}|{}",
-                singer.path,
-                mtime(&dir.join("dsconfig.yaml")),
-                mtime(&dir.join("character.yaml")),
-                color,
-                pitch,
-                req.lang.code(),
-            );
-            let key = fnv(&format!("{salt}|{tempo_key}|{notes_key}|{}", edits.render_key()));
-            let cache_file = self.cache_dir.as_ref().map(|d| d.join(format!("{key:016x}.f32")));
-            let info_file = cache_file.as_ref().map(|f| f.with_extension("json"));
-            let report = |phrase: usize, phrases: usize, cached: bool| {
-                progress(Progress { job, part: name.clone(), index, parts: n_parts, phrase, phrases, cached });
-            };
-            crate::log!("{name}: cantante {} ({}), colore {:?}", singer.name, singer.path, color);
-            let hit = cache_file.as_deref().and_then(read_cache).zip(info_file.as_deref().and_then(read_info));
-            if let Some((mut samples, info)) = hit {
-                crate::log!("{name}: dalla cache");
-                report(1, 1, true);
-                apply_dynamics(&mut samples, edits, &axis);
-                tracks.push(Track { name: name.clone(), samples: Arc::new(samples) });
-                infos.insert(name.clone(), Arc::new(info));
-                continue;
+            let voices = req.parts.iter().find(|p| &p.name == name).map_or(1, |p| p.voices.clamp(1, MAX_VOICES as u8) as usize);
+            let all_colors = if voices > 1 { self.voicebank(&dir)?.colors() } else { vec![] };
+            crate::log!("{name}: cantante {} ({}), colore {:?}, coristi {voices}", singer.name, singer.path, color);
+            let mut section: Vec<f32> = vec![];
+            let mut main_info: Option<TrackInfo> = None;
+            for (k, &(cents, delay_ms)) in SECTION.iter().enumerate().take(voices) {
+                // the other singers of the section: other colours, slightly off pitch and late
+                let color = if k == 0 { color.clone() } else { section_color(&all_colors, color.as_deref(), k) };
+                let label = if voices > 1 { format!("{name} (corista {}/{voices})", k + 1) } else { name.clone() };
+                let salt = format!(
+                    "{ENGINE_VERSION}|{}|{}|{}|{:?}|{:?}|{}{}",
+                    singer.path,
+                    mtime(&dir.join("dsconfig.yaml")),
+                    mtime(&dir.join("character.yaml")),
+                    color,
+                    pitch,
+                    req.lang.code(),
+                    if k > 0 { format!("|corista {k}") } else { String::new() },
+                );
+                let key = fnv(&format!("{salt}|{tempo_key}|{notes_key}|{}", edits.render_key()));
+                let cache_file = self.cache_dir.as_ref().map(|d| d.join(format!("{key:016x}.f32")));
+                let info_file = cache_file.as_ref().map(|f| f.with_extension("json"));
+                let report = |phrase: usize, phrases: usize, cached: bool| {
+                    progress(Progress { job, part: label.clone(), index, parts: n_parts, phrase, phrases, cached });
+                };
+                let hit = cache_file.as_deref().and_then(read_cache).zip(info_file.as_deref().and_then(read_info));
+                let (samples, info) = if let Some(hit) = hit {
+                    crate::log!("{label}: dalla cache");
+                    report(1, 1, true);
+                    hit
+                } else {
+                    report(0, 1, false);
+                    let vb = self.voicebank(&dir)?;
+                    let settings = Settings { pitch, speaker: color.clone(), ..Settings::default() };
+                    let speaker = vb.speaker_suffix(color.as_deref());
+                    let t0 = std::time::Instant::now();
+                    let mut ph =
+                        ds::phonemize::phonemize(&vb, req.lang, notes, &axis, &speaker).map_err(|e| Error::Other(format!("{name}: {e}")))?;
+                    crate::log!("{label}: {} note, {} fonemi in {:.1} s, {} avvisi", notes.len(), ph.phones.len(), t0.elapsed().as_secs_f64(), ph.warnings.len());
+                    if k == 0 {
+                        warnings.extend(ph.warnings.iter().map(|w| format!("{name}: {w}")));
+                    }
+                    let base: Vec<i64> = ph.phones.iter().map(|p| p.position).collect();
+                    let word_of: HashMap<&str, String> =
+                        notes.iter().filter(|n| !n.lyric.starts_with('+')).map(|n| (n.id.as_str(), split_hint(&n.lyric).0)).collect();
+                    let matches = |id: &str, w: &crate::edits::WordEdit| word_of.get(id).is_some_and(|x| w.word.is_empty() || *x == w.word);
+                    if k == 0 {
+                        for (id, w) in edits.notes.iter().filter(|(id, w)| !w.is_empty() && !matches(id, w)) {
+                            let bar = id.split('.').next().unwrap_or("?");
+                            warnings.push(format!("{name}: ritocco di «{}» (battuta {bar}) non applicato: lì la partitura ora ha un'altra parola", w.word));
+                        }
+                    }
+                    let offsets: HashMap<String, Vec<f64>> = edits
+                        .notes
+                        .iter()
+                        .filter(|(id, w)| w.offsets.iter().any(|o| *o != 0.0) && matches(id, w))
+                        .map(|(k, w)| (k.clone(), w.offsets.clone()))
+                        .collect();
+                    ds::phonemize::shift_phonemes(&mut ph, notes, &axis, &offsets);
+                    let curve = |ms: f64| {
+                        let tick = axis.ms_to_tick(ms) as f64;
+                        [edits.pitch.at(tick, 0.0) + cents, edits.gender.at(tick, 0.0), edits.velocity.at(tick, 0.0)]
+                    };
+                    let phrase_cache = self.cache_dir.as_ref().map(|d| DiskPhrases(d.clone()));
+                    let rendered = ds::render::render_track(
+                        &vb,
+                        &ph,
+                        notes,
+                        &axis,
+                        &settings,
+                        &curve,
+                        phrase_cache.as_ref().map(|c| (c as &dyn ds::render::PhraseCache, salt.as_str())),
+                        |i, n| {
+                            report(i, n, false);
+                            self.is_current(job)
+                        },
+                    )
+                    .map_err(|e| Error::Other(format!("{name}: {e}")))?;
+                    let Some(out) = rendered else { return Ok(None) };
+                    crate::log!("{label}: {} frasi sintetizzate ora, le altre dalla cache", out.rendered);
+                    if k == 0 {
+                        warnings.extend(out.warnings.into_iter().map(|w| format!("{name}: {w}")));
+                    }
+                    let info = TrackInfo {
+                        words: word_info(&ph, notes, &base, &axis),
+                        pitch: out.pitch,
+                        phonemes: ds::phonemize::singer_phonemes(&vb, req.lang).unwrap_or_default(),
+                        gender: vb.config.use_key_shift_embed,
+                        velocity: vb.config.use_speed_embed,
+                    };
+                    if let (Some(f), Some(i)) = (&cache_file, &info_file) {
+                        write_cache(f, &out.samples);
+                        write_info(i, &info);
+                    }
+                    (out.samples, info)
+                };
+                add_section_voice(&mut section, &samples, delay_ms, voices);
+                if k == 0 {
+                    main_info = Some(info);
+                }
+                if !self.is_current(job) {
+                    return Ok(None);
+                }
             }
-            report(0, 1, false);
-            let vb = self.voicebank(&dir)?;
-            let settings = Settings { pitch, speaker: color.clone(), ..Settings::default() };
-            let speaker = vb.speaker_suffix(color.as_deref());
-            let t0 = std::time::Instant::now();
-            let mut ph = ds::phonemize::phonemize(&vb, req.lang, notes, &axis, &speaker).map_err(|e| Error::Other(format!("{name}: {e}")))?;
-            crate::log!("{name}: {} note, {} fonemi in {:.1} s, {} avvisi", notes.len(), ph.phones.len(), t0.elapsed().as_secs_f64(), ph.warnings.len());
-            warnings.extend(ph.warnings.iter().map(|w| format!("{name}: {w}")));
-            let base: Vec<i64> = ph.phones.iter().map(|p| p.position).collect();
-            let word_of: HashMap<&str, String> =
-                notes.iter().filter(|n| !n.lyric.starts_with('+')).map(|n| (n.id.as_str(), split_hint(&n.lyric).0)).collect();
-            let matches = |id: &str, w: &crate::edits::WordEdit| word_of.get(id).is_some_and(|x| w.word.is_empty() || *x == w.word);
-            for (id, w) in edits.notes.iter().filter(|(id, w)| !w.is_empty() && !matches(id, w)) {
-                let bar = id.split('.').next().unwrap_or("?");
-                warnings.push(format!("{name}: ritocco di «{}» (battuta {bar}) non applicato: lì la partitura ora ha un'altra parola", w.word));
-            }
-            let offsets: HashMap<String, Vec<f64>> = edits
-                .notes
-                .iter()
-                .filter(|(id, w)| w.offsets.iter().any(|o| *o != 0.0) && matches(id, w))
-                .map(|(k, w)| (k.clone(), w.offsets.clone()))
-                .collect();
-            ds::phonemize::shift_phonemes(&mut ph, notes, &axis, &offsets);
-            let curve = |ms: f64| {
-                let tick = axis.ms_to_tick(ms) as f64;
-                [edits.pitch.at(tick, 0.0), edits.gender.at(tick, 0.0), edits.velocity.at(tick, 0.0)]
-            };
-            let phrase_cache = self.cache_dir.as_ref().map(|d| DiskPhrases(d.clone()));
-            let rendered = ds::render::render_track(
-                &vb,
-                &ph,
-                notes,
-                &axis,
-                &settings,
-                &curve,
-                phrase_cache.as_ref().map(|c| (c as &dyn ds::render::PhraseCache, salt.as_str())),
-                |i, n| {
-                    report(i, n, false);
-                    self.is_current(job)
-                },
-            )
-            .map_err(|e| Error::Other(format!("{name}: {e}")))?;
-            let Some(out) = rendered else { return Ok(None) };
-            crate::log!("{name}: {} frasi sintetizzate ora, le altre dalla cache", out.rendered);
-            warnings.extend(out.warnings.into_iter().map(|w| format!("{name}: {w}")));
-            let info = TrackInfo {
-                words: word_info(&ph, notes, &base, &axis),
-                pitch: out.pitch,
-                phonemes: ds::phonemize::singer_phonemes(&vb, req.lang).unwrap_or_default(),
-                gender: vb.config.use_key_shift_embed,
-                velocity: vb.config.use_speed_embed,
-            };
-            let mut samples = out.samples;
-            if let (Some(f), Some(i)) = (&cache_file, &info_file) {
-                write_cache(f, &samples);
-                write_info(i, &info);
-            }
+            let mut samples = section;
             apply_dynamics(&mut samples, edits, &axis);
             tracks.push(Track { name: name.clone(), samples: Arc::new(samples) });
-            infos.insert(name.clone(), Arc::new(info));
+            if let Some(info) = main_info {
+                infos.insert(name.clone(), Arc::new(info));
+            }
         }
         if !self.is_current(job) {
             return Ok(None);
@@ -528,6 +589,32 @@ fn trim_cache(dir: &Path, max: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn section_singers_get_other_colours() {
+        let c: Vec<String> = (1..=7).map(|i| format!("0{i}")).collect();
+        assert_eq!(section_color(&c, Some("01"), 1).as_deref(), Some("03"));
+        assert_eq!(section_color(&c, Some("01"), 2).as_deref(), Some("05"));
+        assert_eq!(section_color(&c, Some("06"), 2).as_deref(), Some("03"), "wraps around");
+        assert_eq!(section_color(&c, None, 1).as_deref(), Some("03"));
+        assert_eq!(section_color(&["x".into()], Some("x"), 1).as_deref(), Some("x"), "one colour only");
+        assert_eq!(section_color(&[], None, 1), None);
+    }
+
+    #[test]
+    fn section_voices_add_up_late_and_softer() {
+        let mut sum = vec![];
+        add_section_voice(&mut sum, &[1.0, 1.0], 0, 1);
+        assert_eq!(sum, vec![1.0, 1.0], "a soloist is unchanged");
+        let mut sum = vec![];
+        let d = 10 * ds::render::SAMPLE_RATE as usize / 1000;
+        add_section_voice(&mut sum, &[1.0; 1000], 0, 2);
+        add_section_voice(&mut sum, &[1.0; 1000], 10, 2);
+        assert_eq!(sum.len(), 1000 + d);
+        let g = 1.0 / 2f32.sqrt();
+        assert!((sum[0] - g).abs() < 1e-6 && (sum[d] - 2.0 * g).abs() < 1e-6 && (sum[1000 + d - 1] - g).abs() < 1e-6);
+    }
+
 
     #[test]
     fn cache_round_trip_and_trim() {

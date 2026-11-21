@@ -99,6 +99,7 @@ cd src-tauri && cargo test   # test del motore (su Linux serve libasound2-dev pe
 ```
 
 - `src-tauri/src/score.rs`: lettura del `.mscz` e riconoscimento del formato (`read_score`), ordine di esecuzione (ritornelli, salti), id stabile di ogni nota; `musicxml.rs`: lettura di MusicXML (`.musicxml`/`.mxl`) con la stessa disposizione (`assemble`).
+- `src-tauri/src/fx.rs`: riverbero (Freeverb) per l'ambiente del mix.
 - `src-tauri/src/tiger.rs`: download di TIGER DS dalla release ufficiale e installazione del voicebank (lo zip dentro il pacchetto) nella cartella Singers.
 - `src-tauri/src/lyrics.rs`: sillabe → parole, pulizia, regole italiane, eccezioni inglesi, riconoscimento della lingua (per parole intere); `latin.rs`: latino ecclesiastico nei simboli G2p italiani, una vocale per sillaba.
 - `src-tauri/src/ustx.rs`: disposizione delle note e delle sillabe per il motore (formato dei progetti OpenUtau `.ustx` 0.10, usato anche dai test di confronto; l'app non esporta più `.ustx`).
@@ -109,6 +110,7 @@ cd src-tauri && cargo test   # test del motore (su Linux serve libasound2-dev pe
 - `src-tauri/src/ds/`: motore DiffSinger, port in Rust del codice di OpenUtau (`OpenUtau.Core/DiffSinger`, MIT) con ONNX Runtime (`ort`, linkato staticamente): G2P (`g2p.rs`, modelli italiano e ARPAbet+ di OpenUtau in `resources/g2p/`), fonemizzazione e durate (`phonemize.rs`), pitch, modello acustico e vocoder (`render.rs`).
 - `src-tauri/src/sing.rs`: render di tutte le voci (e dell'accompagnamento) in un thread, con annullamento, velocità, ritocchi e cache su disco per voce e per frase (l'intonazione prevista dal modello è in cache a parte, così le curve si sommano sempre alla stessa); `mix.rs`: mix stereo con solo ed export (hound, flacenc, LAME); `project.rs`: file `.msng`; `accomp.rs`: organo per le parti strumentali.
 - `src-tauri/examples/ds_render.rs`: render da riga di comando (`cargo run --release --example ds_render -- <brano.mscz> <voicebank> <out.wav>`); `tests/sing.rs` fa un render completo se `MUSESING_TEST_VOICEBANK` punta a un voicebank.
+- `src-tauri/examples/sing_mix.rs`: come l'app, tutte le voci + accompagnamento + mix con ambiente e coristi (`-- <brano> <voicebank> <out.mp3> --voices 3 --ambience chiesa`).
 - `src-tauri/tests/fixtures.rs`: confronta i progetti con quelli dello script Python di riferimento (`../tools/mscz_to_ustx.py`) sui quattro brani di prova. Le partiture del coro non sono nel repository: senza `src-tauri/tests/fixtures/` questi test vengono saltati.
 - `preview.html`: interfaccia nel browser con il backend simulato, solo per lo sviluppo (`pnpm dev`, poi `/preview.html?auto=1`). La scheda di conversione usa le analisi dei brani (`src/preview-santo.json`, `src/preview-sonnet.json`), anch'esse solo in locale.
 

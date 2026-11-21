@@ -112,7 +112,7 @@ function opened(path: string | null) {
   if (!an) throw "Anteprima senza partiture: mancano src/preview-santo.json e src/preview-sonnet.json";
   const parts = an.parts
     .filter((p) => p.sung)
-    .map((p) => ({ name: p.name, sing: true, singer: "", color: null, volume_db: 0, pan: 0, mute: false, solo: false }));
+    .map((p) => ({ name: p.name, sing: true, singer: "", color: null, volume_db: 0, pan: 0, mute: false, solo: false, voices: 1 }));
   return {
     project: {
       version: 1,
@@ -124,6 +124,7 @@ function opened(path: string | null) {
       parts,
       accompaniment: { enabled: an.parts.some((p) => !p.sung), volume_db: -6, pan: 0, mute: false, solo: false },
       edits: {},
+      ambience: "chiesa",
     },
     path,
     score_path: "/tmp/cache/projects/0123.mscz",

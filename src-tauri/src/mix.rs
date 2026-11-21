@@ -5,6 +5,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
+use crate::fx::Ambience;
 
 /// Mix settings of one part, from the UI.
 #[derive(Debug, Clone, Deserialize)]
@@ -27,6 +28,11 @@ const PEAK: f32 = 0.95;
 /// sides), then scales the whole mix down if it would clip. Tracks missing from `parts` are left
 /// out.
 pub fn mix(tracks: &[(String, &[f32])], parts: &[MixPart]) -> (Vec<f32>, Vec<f32>) {
+    mix_in(tracks, parts, Ambience::Nessuno)
+}
+
+/// `mix` with a room ambience on the whole mix (the mix gets longer by the reverb tail).
+pub fn mix_in(tracks: &[(String, &[f32])], parts: &[MixPart], ambience: Ambience) -> (Vec<f32>, Vec<f32>) {
     let len = tracks.iter().map(|(_, t)| t.len()).max().unwrap_or(0);
     let (mut l, mut r) = (vec![0f32; len], vec![0f32; len]);
     let any_solo = parts.iter().any(|p| p.solo);
@@ -43,6 +49,7 @@ pub fn mix(tracks: &[(String, &[f32])], parts: &[MixPart]) -> (Vec<f32>, Vec<f32
             r[i] += x * gr;
         }
     }
+    crate::fx::apply(&mut l, &mut r, crate::ds::render::SAMPLE_RATE, ambience);
     let peak = l.iter().chain(&r).fold(0f32, |a, &b| a.max(b.abs()));
     if peak > PEAK {
         let k = PEAK / peak;

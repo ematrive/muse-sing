@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Muse Sing registra le frasi cantate per costruire un cantante (voicebank) per OpenUtau.</string>
+  <string>Muse Sing usa il microfono per registrare le frasi di un nuovo cantante e per «Canta e controlla», dove ascolta la tua voce mentre canti la tua parte.</string>
 </dict>
 </plist>

@@ -202,7 +202,8 @@ function trackInfo(part: string) {
   return { words, pitch, phonemes, gender: true, velocity: true };
 }
 
-setInterval(() => emit("audio-level", 0.05 + Math.random() * 0.25), 50);
+// ?mute=1: a microphone that sends nothing (permission missing)
+setInterval(() => emit("audio-level", q.get("mute") ? 0 : 0.05 + Math.random() * 0.25), 50);
 // for UI checks: inject events and look at the commands sent
 const w = window as unknown as { __emit: typeof emit; __calls: [string, unknown][] };
 w.__emit = emit;
@@ -252,8 +253,9 @@ mockIPC(
         const t0 = performance.now();
         const timer = window.setInterval(() => {
           const t = (performance.now() - t0) / 1000;
-          const analyzing = t > 1.6;
-          emit("sing-check", { job: me, t: from + Math.max(0, t - 0.8), counting: t < 0.8, analyzing, level: analyzing ? 0 : 0.2 + 0.4 * Math.random() });
+          const analyzing = t > (q.get("mute") ? 5 : 1.6);
+          const level = analyzing || q.get("mute") ? 0 : 0.2 + 0.4 * Math.random();
+          emit("sing-check", { job: me, t: from + Math.max(0, t - 0.8), counting: t < 0.8, analyzing, level });
           if (analyzing) clearInterval(timer);
         }, 50);
         const part = roll(rollTempo).parts.find((p) => p.name === a.part)!;
@@ -270,7 +272,7 @@ mockIPC(
             lag: 0.03,
             error: null,
           });
-        }, 2000);
+        }, q.get("mute") ? 5600 : 2000);
       }
       return me;
     }

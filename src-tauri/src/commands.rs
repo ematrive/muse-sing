@@ -745,7 +745,26 @@ pub async fn sing_check(
                     break 'judge;
                 };
                 let _ = app.emit("sing-check", CheckProgress { job, t: range.1, counting: false, analyzing: true, level: 0.0 });
+                // the last take on disk, to look at it if something is wrong
+                let peak = rec.samples.iter().fold(0f32, |m, x| m.max(x.abs()));
+                let rms = (rec.samples.iter().map(|x| x * x).sum::<f32>() / rec.samples.len().max(1) as f32).sqrt();
+                if let Ok(dir) = app.path().app_cache_dir() {
+                    let file = dir.join("ultima-prova.wav");
+                    if std::fs::create_dir_all(&dir).is_ok() && audio::write_wav(&file, &rec.samples, rec.sample_rate).is_ok() {
+                        crate::log!("canta e controlla: registrazione in {}", file.display());
+                    }
+                }
+                if peak < 1e-3 {
+                    let mic = engine.status().ok().and_then(|s| s.input).map(|d| d.name).unwrap_or_else(|| "?".into());
+                    crate::log!("canta e controlla: silenzio (picco {peak:.5}) dal microfono «{mic}»");
+                    done.error = Some(format!(
+                        "Il microfono «{mic}» non ha mandato suono. Su macOS controlla Impostazioni di Sistema → Privacy e sicurezza → Microfono: Muse Sing (o il Terminale, se avvii l'app da lì) deve essere attivo. Oppure scegli un altro microfono con «Attiva microfono»."
+                    ));
+                    break 'judge;
+                }
                 let track = crate::pitch::analyze(&rec.samples, rec.sample_rate);
+                let voiced = track.midi.iter().filter(|m| m.is_some()).count() as f64 / track.midi.len().max(1) as f64;
+                crate::log!("canta e controlla: picco {peak:.3}, rms {rms:.4}, voce nel {:.0}% dei frame", voiced * 100.0);
                 let lag = crate::check::best_lag(&notes, &track, offset, range);
                 let at = offset - lag;
                 done.notes = crate::check::compare(&notes, &track, at, range);

@@ -6,8 +6,10 @@ pub const HOP: f64 = 0.01;
 const WINDOW: f64 = 0.03;
 const F_MIN: f64 = 65.0;
 const F_MAX: f64 = 1100.0;
-/// YIN threshold on the cumulative mean normalized difference.
-const THRESHOLD: f32 = 0.15;
+/// YIN threshold on the cumulative mean normalized difference; without a dip under it, the
+/// deepest minimum still counts if it is under `FALLBACK` (real voices in a room are less clean).
+const THRESHOLD: f32 = 0.2;
+const FALLBACK: f32 = 0.35;
 /// Analysis rate: the input is low-passed and decimated to about this.
 const TARGET_SR: u32 = 12_000;
 
@@ -121,6 +123,10 @@ pub fn analyze(samples: &[f32], sr: u32) -> Track {
             }
             tau += 1;
         }
+        let found = found.or_else(|| {
+            let (t, v) = (tau_min..tau_max).map(|t| (t, diff[t])).min_by(|a, b| a.1.total_cmp(&b.1))?;
+            (v < FALLBACK).then_some(t)
+        });
         let Some(t) = found else { continue };
         // parabolic interpolation around the minimum
         let (y0, y1, y2) = (diff[t - 1], diff[t], diff[t + 1]);
@@ -170,6 +176,28 @@ pub(crate) mod tests {
         let t = std::time::Instant::now();
         let tr = analyze(&x, 48_000);
         eprintln!("4 minutes at 48 kHz in {:.2} s ({} frames)", t.elapsed().as_secs_f64(), tr.midi.len());
+    }
+
+    #[test]
+    fn noisy_room_recording() {
+        // the voice with a short echo tail and noise at about 20 dB below it
+        let sr = 48_000u32;
+        let dry = voice(57.0, 2.0, sr, 30.0);
+        let mut x = vec![0f32; dry.len() + sr as usize / 2];
+        for (i, s) in dry.iter().enumerate() {
+            for (d, g) in [(0usize, 1.0f32), (1103, 0.35), (2291, 0.22), (3907, 0.12)] {
+                x[i + d] += s * g;
+            }
+        }
+        let mut seed = 12345u32;
+        for v in &mut x {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            *v += ((seed >> 8) as f32 / (1u32 << 24) as f32 - 0.5) * 0.04;
+        }
+        let tr = analyze(&x, sr);
+        let got: Vec<f32> = (20..190).filter_map(|k| tr.at(k as f64 * HOP)).collect();
+        assert!(got.len() > 150, "{} voiced frames of 170", got.len());
+        assert!(got.iter().all(|m| (m - 57.0).abs() < 0.7), "no octave jumps: {:?}", got.iter().find(|m| (*m - 57.0).abs() >= 0.7));
     }
 
     #[test]

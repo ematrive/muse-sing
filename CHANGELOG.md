@@ -10,7 +10,11 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 - **Strumenti veri:** l'accompagnamento suona tutte le note delle parti strumentali (accordi e voci interne, non più solo la melodia) e, scaricando gli strumenti (31 MB), con organo a canne, armonium, pianoforte, archi, flauto, chitarra o arpa, scelti per ogni parte.
 - **Voce suonata:** ogni voce può essere suonata al pianoforte invece che cantata, per imparare le note.
 - **Metronomo e conteggio:** colpo su ogni battito (anche nei 6/8 e nei cambi di metro) e, a scelta, una battuta di conteggio con l'accordo di partenza prima dell'ascolto e delle basi di studio.
-- **Canta e controlla:** canti la tua parte in cuffia sopra le altre voci (con conteggio, su tutto il brano o su un tratto) e Muse Sing ti dice nota per nota com'è andata. Le note diventano verdi, gialle o rosse, la linea azzurra mostra la tua voce, e il riepilogo dice le note intonate, se cali o cresci e quali battute riprendere. Con «Riascolta» senti la tua registrazione sopra la base.
+- **Prepara le voci / Studia:** il progetto è diviso in due schede.
+  - Nella prima si sceglie come generare le voci (lingua, cantanti, strumenti, ritocchi).
+  - Nella seconda si studia: «Io canto», un mixer con tutte le tracce (voci, accompagnamento, metronomo, ambiente), l'ascolto con il rullo, Canta e controlla e le basi.
+  - Finita la generazione si passa da soli a Studia.
+- **Canta e controlla:** canti la tua parte in cuffia sopra le altre voci (con conteggio, su tutto il brano o su un tratto) e Muse Sing ti dice nota per nota com'è andata. Le note diventano verdi, gialle o rosse, la linea azzurra mostra la tua voce, e il riepilogo dice le note intonate, se cali o cresci e quali battute riprendere. Con «Riascolta» senti la tua registrazione sopra la base. Il microfono si accende nel riquadro stesso, con la scelta del dispositivo e il livello; se non arriva suono, Muse Sing spiega come dare il permesso.
 - **Segni della partitura:** dinamiche e forcelle cambiano il volume delle voci, i respiri accorciano la nota e fanno prendere fiato al cantante, corone e rit./rall./accel. rallentano o accelerano il tempo. Si possono spegnere con una spunta.
 - **Tonalità:** tutto il brano (voci, strumenti, rullo) spostato fino a 6 semitoni sopra o sotto.
 - **Basi senza la propria voce:** le basi di studio possono avere tutte le voci tranne la propria, per cantarci sopra (o entrambi i tipi).

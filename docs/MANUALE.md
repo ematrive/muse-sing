@@ -54,7 +54,15 @@ Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo rico
 
 **Partitura corretta in MuseScore?** Premi **Ricarica partitura…** e scegli il file aggiornato: le scelte delle voci che ci sono ancora restano, poi genera di nuovo.
 
-### Voci, cantanti e impostazioni
+### Le due schede
+
+Il progetto ha due schede:
+- **1 · Prepara le voci:** tutto ciò che serve a generare l'audio, cioè lingua, intonazione, velocità, tonalità, cantanti, strumenti e Ritocchi. Ogni cambiamento qui richiede di generare di nuovo.
+- **2 · Studia:** si apre quando le voci sono pronte. Contiene il mixer, l'ascolto con il rullo, **Canta e controlla** e l'esportazione. Qui non si rigenera niente.
+
+Finita la generazione, Muse Sing passa da solo a **Studia**. Se poi cambi qualcosa in **Prepara le voci**, in cima a **Studia** compare il pulsante per generare di nuovo.
+
+### 1 · Prepara le voci
 
 - **Lingua:** italiano, inglese o **latino (ecclesiastico)**; viene riconosciuta da sola, ma puoi cambiarla.
 - **Intonazione:**
@@ -69,35 +77,49 @@ Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo rico
 
   Togli la spunta per un'esecuzione piatta, a volume e tempo costanti. Anche il rullo segue i segni, così il cursore resta sulla musica.
 - **Tonalità:** sposta tutto il brano (voci, strumenti, conteggio e rullo) fino a 6 semitoni sopra o sotto, per adattarlo alla tua voce. Come la velocità, richiede di generare di nuovo.
-- **Ambiente:** il riverbero di una stanza, di una chiesa o di una cattedrale, sentito in ascolto e messo nei file esportati e nelle basi di studio. «Nessuno» lascia la voce secca, com'era prima. Sotto, lo slider **Riverbero** regola quanto se ne sente: 50% è il valore normale, 0% lo toglie, 100% lo raddoppia (doppio clic: torna al 50%). Si può cambiare in qualsiasi momento senza generare di nuovo.
 - **Voci:** spunta quelle da cantare e scegli il **cantante** di ognuna. Se il cantante ha più colori di voce (Tiger ne ha diversi), accanto compare la scelta del colore. Muse Sing ricorda il cantante di ogni voce (Soprano, Tenore…) da un brano all'altro.
 - **Coristi:** con 2 o 3 coristi la voce è cantata da una piccola sezione invece che da un solista: ogni corista ha un altro colore di voce e canta in modo leggermente diverso, come in un coro vero. La generazione dura 2 o 3 volte tanto (le voci già generate si riusano).
-- **La mia voce:** il pulsante accanto al nome evidenzia quella voce nel rullo e la sceglie per **Canta e controlla**.
 - **Cantata o suonata:** ogni voce può essere **suonata** al pianoforte invece che cantata, per imparare le note senza le parole. È istantanea e non serve un cantante.
 - **Accompagnamento:** se la partitura ha parti senza testo (organo, pianoforte), Muse Sing le suona tutte, accordi compresi. Si attiva o disattiva con la casella. All'inizio suona un organo semplice; con **Scarica strumenti veri** (31 MB, una volta sola) Muse Sing scarica gli strumenti di GeneralUser GS e puoi scegliere per ogni parte organo a canne, armonium, pianoforte, archi, flauto, chitarra o arpa. Lo strumento proposto dipende dal nome della parte. Dopo il download o un cambio di strumento serve **Genera audio** (le voci già cantate si riusano, quindi è veloce).
-- **Metronomo:** con la casella si sente un colpo per ogni battito, più forte sul primo della battuta; nei 6/8, 9/8 e 12/8 batte le semiminime puntate. Ha volume e pan come le altre tracce e si accende o spegne senza rigenerare.
 
-### Generare e ascoltare
+**Genera le voci.** Premi **Genera audio**. Il Mac calcola le voci una dopo l'altra: per un brano di 3-4 minuti con quattro voci servono alcuni minuti. Puoi annullare; la frase in corso finisce prima di fermarsi.
 
-1. Premi **Genera audio**. Il Mac calcola le voci una dopo l'altra: per un brano di 3-4 minuti con quattro voci servono alcuni minuti. Puoi annullare; la frase in corso finisce prima di fermarsi.
-2. Premi **Ascolta**. Con la barra o con un clic sul rullo scegli da dove partire; durante l'ascolto il rullo scorre con la linea rossa. Il righello in cima mostra le battute con gli stessi numeri della partitura (anche nei ritornelli, dove i numeri si ripetono), e in viola il metro dove cambia.
+Le voci già generate con le stesse scelte vengono riusate: se cambi il cantante di una sola voce, si rigenera solo quella, e dopo un ritocco solo le frasi toccate.
+
+**Avvisi di pronuncia.** Sotto il pulsante, «avvisi di pronuncia» elenca le parole che il cantante non sa dire del tutto (un suono che non ha). Di solito la parola si sente lo stesso, con quel suono saltato.
+
+### 2 · Studia
+
+- **Io canto:** scegli la tua voce. È evidenziata nel rullo ed è quella che canti in **Canta e controlla**.
+- **Mixer:** per ogni voce, per l'accompagnamento e per il metronomo ci sono:
+  - il **volume** (doppio clic: 0 dB);
+  - la posizione a sinistra o a destra (**pan**);
+  - **accesa / spenta**, per escludere la traccia;
+  - **solo**, per sentire solo le tracce con «solo» acceso.
+
+  Il mix vale per l'ascolto, per Canta e controlla e per i file esportati, e si sente subito, senza rigenerare.
+  - **Metronomo:** con la sua casella si sente un colpo per ogni battito, più forte sul primo della battuta; nei 6/8, 9/8 e 12/8 batte le semiminime puntate. Ha volume e pan come le altre tracce e si accende o spegne senza rigenerare.
+  - **Ambiente:** il riverbero di una stanza, di una chiesa o di una cattedrale, sentito in ascolto e messo nei file esportati e nelle basi di studio. «Nessuno» lascia la voce secca, com'era prima. Sotto, lo slider **Riverbero** regola quanto se ne sente: 50% è il valore normale, 0% lo toglie, 100% lo raddoppia (doppio clic: torna al 50%). Si può cambiare in qualsiasi momento senza generare di nuovo.
+
+**Ascoltare.**
+1. Premi **Ascolta**. Con la barra o con un clic sul rullo scegli da dove partire; durante l'ascolto il rullo scorre con la linea rossa. Il righello in cima mostra le battute con gli stessi numeri della partitura (anche nei ritornelli, dove i numeri si ripetono), e in viola il metro dove cambia.
    Con **conteggio** acceso, prima di partire si sente una battuta di colpi al tempo del punto di partenza (due battute nei tempi in 6/8), con l'accordo delle voci sotto gli ultimi due colpi. Non vale quando ripeti un tratto.
 3. **Ripetere un tratto:** trascina sul righello in cima al rullo per scegliere un tratto, che si colora di giallo: l'ascolto lo ripete finché non premi Ferma. La × accanto al tratto, sopra, lo toglie.
-4. **Mix** di ogni voce e dell'accompagnamento: volume, posizione a sinistra o a destra (pan), «muta» per escluderla, «solo» per sentire solo le tracce con «solo» acceso. Le modifiche si sentono subito, senza rigenerare. Doppio clic su un cursore lo riporta a zero.
-
-Le voci già generate con le stesse scelte vengono riusate: se cambi il cantante di una sola voce, si rigenera solo quella, e dopo un ritocco solo le frasi toccate. Se cambi voci, cantanti, lingua, intonazione, velocità o ritocchi dopo aver generato, Muse Sing chiede di generare di nuovo.
-
-**Avvisi di pronuncia.** Sotto il lettore, «avvisi di pronuncia» elenca le parole che il cantante non sa dire del tutto (un suono che non ha). Di solito la parola si sente lo stesso, con quel suono saltato.
 
 ### Canta e controlla
 
 Per provare la tua parte e vedere come è andata, nota per nota.
 
-1. Genera l'audio e scegli **la mia voce** accanto alla tua parte.
-2. **Mettiti le cuffie.** Senza cuffie il microfono sente anche le altre voci e il risultato non vale. Microfono e cuffie sono quelli scelti in **Registra un cantante** (la prima volta il Mac chiede il permesso per il microfono).
-3. Scegli cosa cantare. Di solito si parte dal cursore e si arriva alla fine; se trascini sul righello del rullo, invece, canti solo quel tratto.
-4. Scegli come sentire **la tua voce nella base**: **muta** (canti da solo sopra le altre), **piano** (una traccia guida bassa) o **normale**.
-5. Premi **Canta**. Prima senti la battuta di conteggio, poi la musica, e intanto canti la tua parte. **Ferma** chiude prima la prova; si valuta quello che hai cantato fin lì.
+1. In **Studia** scegli la tua voce in **Io canto**.
+2. **Mettiti le cuffie** e premi **Accendi il microfono**. Senza cuffie il microfono sente anche le altre voci e il risultato non vale.
+   - Scegli microfono e cuffie: sono gli stessi di **Registra un cantante**.
+   - Parla: la barra del livello deve muoversi. Se resta ferma, vedi «Il microfono non sente» in Problemi comuni.
+   - La prima volta il Mac chiede il permesso per il microfono.
+   - Il microfono si spegne quando esci da Studia o con «spegni il microfono».
+3. Nel **Mixer** abbassa o spegni le voci che non vuoi sentire mentre canti. Durante la prova il mixer è bloccato.
+4. Scegli cosa cantare. Di solito si parte dal cursore e si arriva alla fine; se trascini sul righello del rullo, invece, canti solo quel tratto.
+5. Scegli come sentire **la tua voce nella base**: **spenta** (canti da solo sopra le altre), **piano** (una traccia guida bassa) o **come nel mixer**.
+6. Premi **Canta**. Prima senti la battuta di conteggio, poi la musica, e intanto canti la tua parte. **Ferma** chiude prima la prova; si valuta quello che hai cantato fin lì.
 
 Dopo la prova le note della tua parte nel rullo cambiano colore:
 - **verde:** intonata, entro un quarto di semitono (25 cent);
@@ -112,11 +134,11 @@ Cosa sapere:
 - L'ottava non conta: un uomo che canta la parte del soprano un'ottava sotto è intonato.
 - Le note molto brevi non si valutano.
 - Muse Sing compensa da solo un piccolo ritardo del microfono o delle cuffie Bluetooth.
-- La registrazione resta in memoria solo fino alla prova successiva e non si salva nel progetto.
+- La registrazione resta in memoria solo fino alla prova successiva e non si salva nel progetto. L'ultima prova resta anche in un file, `ultima-prova.wav`, nella cartella cache di Muse Sing (`~/Library/Caches/app.musesing.desktop`), utile per segnalare un problema.
 
 ### Ritocchi
 
-Dopo aver generato l'audio, il riquadro **Ritocchi** sotto il rullo mostra una voce alla volta (sceglila in alto a sinistra; parte da «la mia voce»): le note in grigio, in viola l'intonazione davvero cantata, sotto le parole. I ritocchi si salvano nel progetto. Se ricarichi la partitura:
+Dopo aver generato l'audio, il riquadro **Ritocchi** in **Prepara le voci** mostra una voce alla volta (sceglila in alto a sinistra; parte da «la mia voce»): le note in grigio, in viola l'intonazione davvero cantata, sotto le parole. I ritocchi si salvano nel progetto. Se ricarichi la partitura:
 - i ritocchi di una parola restano legati alla sua nota (battuta, passata, posizione nella battuta). Se aggiungi o togli battute prima di quella parola, al suo posto c'è un'altra parola: Muse Sing non applica il ritocco e lo segnala tra gli avvisi;
 - le curve restano alla stessa posizione nel brano: se aggiungi o togli battute prima, si spostano con le note solo da lì in avanti. In quel caso controllale.
 
@@ -303,6 +325,13 @@ wavs/          un file WAV per frase
 Apri la cartella dall'icona in alto a sinistra e mandala intera a chi prepara il cantante. Seguono l'etichettatura automatica, l'addestramento su una GPU in affitto e il pacchetto da copiare nella cartella dei cantanti di Muse Sing. Queste fasi non sono ancora nell'app.
 
 ## Problemi comuni
+
+### Il microfono non sente (Canta e controlla, Registra)
+
+Se la barra del livello resta ferma quando parli, il Mac non passa il suono a Muse Sing. Muse Sing lo segnala anche mentre canti.
+1. Apri **Impostazioni di Sistema → Privacy e sicurezza → Microfono** e attiva **Muse Sing**. Se avvii l'app dal Terminale (sviluppo), deve essere attivo il **Terminale**.
+2. Spegni e riaccendi il microfono in Muse Sing, oppure chiudi e riapri l'app.
+3. Prova a scegliere un altro microfono nel menu (per esempio quello del Mac invece di quello delle cuffie).
 
 **«L'app è danneggiata e non può essere aperta».**
 È il blocco di macOS per le app senza certificato Apple. Dal Terminale:

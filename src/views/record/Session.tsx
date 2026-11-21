@@ -36,6 +36,7 @@ import {
 } from "../../lib/api";
 import { MicCheck, type MicState } from "./MicCheck";
 import { noteAt, noteStarts, PianoRoll } from "./PianoRoll";
+import { serial } from "../../lib/serial";
 import { useStored } from "./useStored";
 
 const COUNT_IN_BEATS = 4;
@@ -46,13 +47,6 @@ const SPEEDS = [0.5, 0.75, 1];
 /** Pause before moving on by itself after a good take. */
 const ADVANCE_MS = 1800;
 
-/** Open/close of the devices must not overtake each other. */
-let audioChain: Promise<unknown> = Promise.resolve();
-function serial<T>(f: () => Promise<T>): Promise<T> {
-  const p = audioChain.then(f, f);
-  audioChain = p.catch(() => {});
-  return p;
-}
 
 export function ErrorBox({ error, onClose }: { error: string | null; onClose: () => void }) {
   if (!error) return null;

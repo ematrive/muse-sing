@@ -21,14 +21,11 @@ import {
   Save,
   Square,
   Upload,
-  Volume2,
-  VolumeX,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ACCOMPANIMENT,
-  AMBIENCES,
   INSTRUMENTS,
   instrumentFor,
   MAX_TRANSPOSE,
@@ -71,17 +68,13 @@ import {
 } from "../lib/api";
 import { Editor } from "./project/Editor";
 import { CheckPanel, OWN_VOICE_DB, summarize, type OwnVoice } from "./project/Check";
+import { Mixer } from "./project/Mixer";
 import { ScoreRoll } from "./project/ScoreRoll";
 
 function fmtDuration(sec: number) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function panLabel(p: number) {
-  if (Math.abs(p) < 0.05) return "C";
-  return `${p < 0 ? "S" : "D"} ${Math.round(Math.abs(p) * 100)}`;
 }
 
 function singerLabel(s: SingerInfo, lang: Lang) {
@@ -111,72 +104,6 @@ function readMine(): string | null {
   }
 }
 
-/** Mix line (volume, pan, mute, solo) shared by the voices and the accompaniment. */
-function MixControls({
-  volume,
-  pan,
-  mute,
-  solo,
-  onChange,
-}: {
-  volume: number;
-  pan: number;
-  mute: boolean;
-  solo: boolean;
-  onChange: (patch: Partial<{ volume_db: number; pan: number; mute: boolean; solo: boolean }>) => void;
-}) {
-  return (
-    <>
-      <label className="flex items-center gap-2">
-        Volume
-        <input
-          type="range"
-          min={-24}
-          max={6}
-          step={1}
-          value={volume}
-          onChange={(e) => onChange({ volume_db: Number(e.target.value) })}
-          onDoubleClick={() => onChange({ volume_db: 0 })}
-          className="w-28 accent-violet-600"
-        />
-        <span className="w-12 tabular-nums">
-          {volume > 0 ? "+" : ""}
-          {volume} dB
-        </span>
-      </label>
-      <label className="flex items-center gap-2">
-        Pan
-        <input
-          type="range"
-          min={-1}
-          max={1}
-          step={0.05}
-          value={pan}
-          onChange={(e) => onChange({ pan: Number(e.target.value) })}
-          onDoubleClick={() => onChange({ pan: 0 })}
-          className="w-24 accent-violet-600"
-        />
-        <span className="w-10 tabular-nums">{panLabel(pan)}</span>
-      </label>
-      <button
-        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${mute ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "hover:text-zinc-800 dark:hover:text-zinc-200"}`}
-        onClick={() => onChange({ mute: !mute })}
-        title="Escludi dall'ascolto e dall'export (senza rigenerare)"
-      >
-        {mute ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
-        {mute ? "muta" : "attiva"}
-      </button>
-      <button
-        className={`rounded px-1.5 py-0.5 font-semibold ${solo ? "bg-amber-400 text-amber-950" : "hover:text-zinc-800 dark:hover:text-zinc-200"}`}
-        onClick={() => onChange({ solo: !solo })}
-        title="Ascolta solo le tracce con «solo» attivo"
-      >
-        solo
-      </button>
-    </>
-  );
-}
-
 /** `onShow`: bring this view to the front (a file was opened from the Finder). */
 export default function ProjectView({ active, onShow }: { active: boolean; onShow?: () => void }) {
   const [opened, setOpened] = useState<Omit<OpenedProject, "project"> | null>(null);
@@ -186,6 +113,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [roll, setRoll] = useState<Roll | null>(null);
   const [mine, setMine] = useState<string | null>(readMine);
+  const [tab, setTab] = useState<"prepara" | "studia">("prepara");
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -293,6 +221,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     setProjectRaw(p);
     setDirty(isDirty);
     setRendered(null);
+    setTab("prepara");
     setNotice(null);
     setLoop(null);
     setCursor(0);
@@ -421,6 +350,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
         else if (!d.cancelled) {
           setRendered({ sig: sigRef.current, seconds: d.seconds, warnings: d.warnings });
           setCursor(then ?? 0);
+          // the voices are ready: on to studying (not after «Applica e ascolta» of the edits)
+          if (then === null) setTab("studia");
           if (then !== null) window.setTimeout(() => startPlayRef.current(then, null), 50);
         }
       }),
@@ -466,7 +397,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const renderInstruments: Record<string, Instrument> = Object.fromEntries(instrumentParts.map((n) => [n, instrumentOf(n)]));
   const renderEdits: Record<string, PartEdits> = Object.fromEntries(sung.filter((p) => project?.edits[p.name]).map((p) => [p.name, project!.edits[p.name]]));
   const sig =
-    project && opened ? JSON.stringify([
+    project && opened
+      ? JSON.stringify([
           opened.score_path,
           project.lang,
           project.pitch,
@@ -478,7 +410,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
           sfInstalled,
           project.marks ?? true,
           project.transpose ?? 0,
-        ]) : "";
+        ])
+      : "";
   sigRef.current = sig;
   const upToDate = !!rendered && rendered.sig === sig;
   const mix: MixPart[] = useMemo(() => {
@@ -680,7 +613,13 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
       setError(errorText(e));
     }
   };
-  const checkSummary = checkResult ? summarize(checkResult, roll?.parts.find((p) => p.name === checkResult.part), roll?.bars ?? []) : null;
+  const checkSummary = checkResult
+    ? summarize(
+        checkResult,
+        roll?.parts.find((p) => p.name === checkResult.part),
+        roll?.bars ?? [],
+      )
+    : null;
 
   // volume / pan / mute / solo / loop changed while playing: start again from the same point
   const loopKey = JSON.stringify(loop);
@@ -786,7 +725,11 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
             </button>
             <span className="ml-2 truncate text-zinc-500" title={opened?.path ?? ""}>
               {title}
-              {dirty && <span className="ml-1 text-violet-600" title="Modifiche non salvate">●</span>}
+              {dirty && (
+                <span className="ml-1 text-violet-600" title="Modifiche non salvate">
+                  ●
+                </span>
+              )}
             </span>
           </>
         )}
@@ -828,7 +771,12 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                 {fmtDuration(analysis.duration_sec)}
               </div>
             </div>
-            <button className="btn" onClick={reloadScore} disabled={busy || rendering} title="Sostituisci la partitura con una versione aggiornata, tenendo le scelte">
+            <button
+              className="btn"
+              onClick={reloadScore}
+              disabled={busy || rendering}
+              title="Sostituisci la partitura con una versione aggiornata, tenendo le scelte"
+            >
               <RefreshCw className="h-4 w-4" /> Ricarica partitura…
             </button>
           </section>
@@ -843,437 +791,336 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
             </section>
           )}
 
-          <section className="card grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <div>
-              <label className="label">Lingua del testo</label>
-              <select className="field" aria-label="Lingua del testo" value={project.lang} onChange={(e) => setProject((p) => ({ ...p, lang: e.target.value as Lang }))} disabled={rendering}>
-                {Object.entries(LANGS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                    {k === analysis.lang ? " (riconosciuta)" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Intonazione</label>
-              <select className="field" aria-label="Intonazione" value={project.pitch} onChange={(e) => setProject((p) => ({ ...p, pitch: e.target.value as PitchMode }))} disabled={rendering}>
-                <option value="model">Naturale (decide il cantante)</option>
-                <option value="notes">Esatta (ferma sulle note)</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Velocità</label>
-              <select
-                className="field"
-                aria-label="Velocità"
-                value={project.tempo_factor}
-                onChange={(e) => setProject((p) => ({ ...p, tempo_factor: Number(e.target.value) }))}
-                disabled={rendering}
+          <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800" role="tablist">
+            {(
+              [
+                ["prepara", "1 · Prepara le voci", "Lingua, cantanti, strumenti e ritocchi: tutto ciò che serve a generare l'audio"],
+                ["studia", "2 · Studia", "Mixer, ascolto, Canta e controlla, basi di studio"],
+              ] as const
+            ).map(([k, label, title]) => (
+              <button
+                key={k}
+                role="tab"
+                aria-selected={tab === k}
+                title={k === "studia" && !rendered ? "Genera prima l'audio" : title}
+                disabled={k === "studia" && !rendered}
+                onClick={() => setTab(k)}
+                className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium disabled:opacity-40 ${tab === k ? "border-violet-600 text-violet-700 dark:text-violet-300" : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}
               >
-                {TEMPOS.map((t) => (
-                  <option key={t} value={t}>
-                    {t === 1 ? "100% (come scritto)" : `${Math.round(t * 100)}% (per studiare)`}
-                  </option>
-                ))}
-              </select>
-              <label
-                className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500"
-                title="Dinamiche e forcelle, respiri, corone, rit. e accel. scritti nella partitura. Togli la spunta per un'esecuzione piatta e a tempo costante."
-              >
-                <input
-                  type="checkbox"
-                  className="accent-violet-600"
-                  checked={project.marks ?? true}
-                  onChange={() => setProject((p) => ({ ...p, marks: !(p.marks ?? true) }))}
-                  disabled={rendering}
-                />
-                segni della partitura
-              </label>
-            </div>
-            <div>
-              <label className="label">Tonalità</label>
-              <select
-                className="field"
-                aria-label="Tonalità"
-                title="Sposta tutto (voci, strumenti, rullo) di qualche semitono, per adattarlo alla tua voce"
-                value={project.transpose ?? 0}
-                onChange={(e) => setProject((p) => ({ ...p, transpose: Number(e.target.value) }))}
-                disabled={rendering}
-              >
-                {Array.from({ length: 2 * MAX_TRANSPOSE + 1 }, (_, i) => MAX_TRANSPOSE - i).map((t) => (
-                  <option key={t} value={t}>
-                    {t === 0 ? "Come scritta" : `${t > 0 ? "+" : "−"}${Math.abs(t)} ${Math.abs(t) === 1 ? "semitono" : "semitoni"} ${t > 0 ? "sopra" : "sotto"}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Ambiente</label>
-              <select
-                className="field"
-                aria-label="Ambiente"
-                title="Il riverbero di una stanza o di una chiesa, in ascolto e nei file esportati"
-                value={ambience}
-                onChange={(e) => setProject((p) => ({ ...p, ambience: e.target.value as Ambience }))}
-              >
-                {Object.entries(AMBIENCES).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-              {ambience !== "nessuno" && (
-                <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
-                  <span>Riverbero</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={Math.round(room.reverb * 100)}
-                    onChange={(e) => setProject((p) => ({ ...p, reverb: Number(e.target.value) / 100 }))}
-                    onDoubleClick={() => setProject((p) => ({ ...p, reverb: 0.5 }))}
-                    className="min-w-0 flex-1 accent-violet-600"
-                    aria-label="Quantità di riverbero"
-                    title="Doppio clic: valore normale"
-                  />
-                  <span className="w-9 text-right tabular-nums">{Math.round(room.reverb * 100)}%</span>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="card">
-            <div className="label flex items-center justify-between">
-              <span>Voci, cantanti e mix</span>
-              <button className="text-violet-600 hover:underline" onClick={loadSingers} title="Rileggi i cantanti installati" disabled={rendering}>
-                <RefreshCw className="inline h-3 w-3" /> aggiorna cantanti
+                {label}
               </button>
-            </div>
-            {singers && diffsinger.length === 0 && (
-              <div className="mb-2 rounded-md border border-zinc-300 p-2 text-zinc-500 dark:border-zinc-700">
-                <p>
-                  Nessun cantante installato. Muse Sing usa <b>TIGER DS</b> (di tigermeat), che canta in italiano, latino e inglese: si scarica gratis dal sito
-                  dell'autore (circa 550 MB), solo per uso non commerciale e citando l'autore.
-                </p>
-                <div className="mt-2 flex items-center gap-3">
-                  <button className="btn-primary" onClick={installTiger} disabled={!!tiger || rendering}>
-                    {tiger ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Scarica Tiger
-                  </button>
-                  {tiger && <span className="text-xs">{tigerText(tiger)}</span>}
+            ))}
+          </div>
+
+          {tab === "prepara" ? (
+            <>
+              <section className="card grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <label className="label">Lingua del testo</label>
+                  <select
+                    className="field"
+                    aria-label="Lingua del testo"
+                    value={project.lang}
+                    onChange={(e) => setProject((p) => ({ ...p, lang: e.target.value as Lang }))}
+                    disabled={rendering}
+                  >
+                    {Object.entries(LANGS).map(([k, v]) => (
+                      <option key={k} value={k}>
+                        {v}
+                        {k === analysis.lang ? " (riconosciuta)" : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <p className="mt-2 text-xs">
-                  Oppure copia un voicebank DiffSinger in una di queste cartelle e premi «aggiorna cantanti»:{" "}
-                  {[...singers.folders, singers.own_folder].filter(Boolean).join(", ")}.
-                </p>
-              </div>
-            )}
-            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {parts.map((p) => {
-                const s = singerOf(p);
-                const info = analysis.parts.find((x) => x.name === p.name);
-                return (
-                  <div key={p.name} className="py-2.5">
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        className="mt-1 accent-violet-600"
-                        disabled={rendering}
-                        checked={p.sing}
-                        onChange={() => setPart(p.name, { sing: !p.sing })}
-                        aria-label={`Canta ${p.name}`}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium">
-                          {p.name}{" "}
-                          {info && (
-                            <span className="font-normal text-zinc-500">
-                              · {info.notes} note · {info.syllables} sillabe
-                            </span>
-                          )}
-                          <button
-                            className={`ml-2 rounded px-1.5 text-xs ${mine === p.name ? "bg-violet-600 text-white" : "text-zinc-400 hover:text-violet-600"}`}
-                            onClick={() => chooseMine(mine === p.name ? null : p.name)}
-                            title="La voce che canti tu: evidenziata nel rullo"
-                          >
-                            la mia voce
-                          </button>
-                        </div>
-                        {info && <div className="truncate text-xs italic text-zinc-500">{info.preview.replace(/\[[^\]]*\]/g, "")} …</div>}
-                      </div>
-                      <div className="flex shrink-0 gap-1.5">
-                        <select
-                          className="field w-28 py-1"
-                          value={p.played ? "suona" : "canta"}
-                          disabled={!p.sing || rendering}
-                          onChange={(e) => setPart(p.name, { played: e.target.value === "suona" })}
-                          title="«Suonata»: la voce è suonata al pianoforte invece che cantata, per imparare le note"
-                          aria-label={`Cantata o suonata: ${p.name}`}
-                        >
-                          <option value="canta">Cantata</option>
-                          <option value="suona">Suonata</option>
-                        </select>
-                        {!p.played && (
-                          <>
-                            <select
-                              className="field w-52 py-1"
-                              value={p.singer}
-                              disabled={!p.sing || rendering}
-                              onChange={(e) => setPart(p.name, { singer: e.target.value, color: null })}
-                              aria-label={`Cantante di ${p.name}`}
-                            >
-                              <option value="">— cantante —</option>
-                              {diffsinger.map((x) => (
-                                <option key={x.id} value={x.id} disabled={!x.engine}>
-                                  {singerLabel(x, project.lang)}
-                                </option>
-                              ))}
-                            </select>
-                            {s && s.colors.length > 1 && (
-                              <select
-                                className="field w-32 py-1"
-                                value={p.color ?? ""}
-                                disabled={!p.sing || rendering}
-                                onChange={(e) => setPart(p.name, { color: e.target.value || null })}
-                                title="Colore di voce"
-                                aria-label={`Colore di voce di ${p.name}`}
-                              >
-                                {s.colors.map((col, i) => (
-                                  <option key={col} value={i === 0 ? "" : col}>
-                                    {col}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-                            <select
-                              className="field w-28 py-1"
-                              value={p.voices ?? 1}
-                              disabled={!p.sing || rendering}
-                              onChange={(e) => setPart(p.name, { voices: Number(e.target.value) })}
-                              title="Più coristi sulla stessa voce, ognuno con un colore diverso: suona come una sezione del coro. La generazione dura di più."
-                              aria-label={`Coristi di ${p.name}`}
-                            >
-                              <option value={1}>1 corista</option>
-                              <option value={2}>2 coristi</option>
-                              <option value={3}>3 coristi</option>
-                            </select>
-                          </>
-                        )}
-                        {p.played && <span className="self-center px-2 text-xs text-zinc-500">al pianoforte{sfInstalled ? "" : " (suono semplice)"}</span>}
-                      </div>
-                    </div>
-                    {p.sing && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 pl-7 text-xs text-zinc-500">
-                        <MixControls volume={p.volume_db} pan={p.pan} mute={p.mute} solo={p.solo} onChange={(patch) => setPart(p.name, patch)} />
-                        {s && !s.engine && <span className="text-amber-600">{s.engine_note}</span>}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {hasInstruments && (
-                <div className="py-2.5">
-                  <div className="flex items-start gap-3">
+                <div>
+                  <label className="label">Intonazione</label>
+                  <select
+                    className="field"
+                    aria-label="Intonazione"
+                    value={project.pitch}
+                    onChange={(e) => setProject((p) => ({ ...p, pitch: e.target.value as PitchMode }))}
+                    disabled={rendering}
+                  >
+                    <option value="model">Naturale (decide il cantante)</option>
+                    <option value="notes">Esatta (ferma sulle note)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Velocità</label>
+                  <select
+                    className="field"
+                    aria-label="Velocità"
+                    value={project.tempo_factor}
+                    onChange={(e) => setProject((p) => ({ ...p, tempo_factor: Number(e.target.value) }))}
+                    disabled={rendering}
+                  >
+                    {TEMPOS.map((t) => (
+                      <option key={t} value={t}>
+                        {t === 1 ? "100% (come scritto)" : `${Math.round(t * 100)}% (per studiare)`}
+                      </option>
+                    ))}
+                  </select>
+                  <label
+                    className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500"
+                    title="Dinamiche e forcelle, respiri, corone, rit. e accel. scritti nella partitura. Togli la spunta per un'esecuzione piatta e a tempo costante."
+                  >
                     <input
                       type="checkbox"
-                      className="mt-1 accent-violet-600"
+                      className="accent-violet-600"
+                      checked={project.marks ?? true}
+                      onChange={() => setProject((p) => ({ ...p, marks: !(p.marks ?? true) }))}
                       disabled={rendering}
-                      checked={project.accompaniment.enabled}
-                      onChange={() => setProject((p) => ({ ...p, accompaniment: { ...p.accompaniment, enabled: !p.accompaniment.enabled } }))}
-                      aria-label="Accompagnamento"
                     />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium">
-                        Accompagnamento{" "}
-                        <span className="font-normal text-zinc-500">
-                          · {sfInstalled ? "le parti strumentali" : `${instrumentParts.join(", ")} con suono d'organo semplice`}
-                        </span>
-                      </div>
-                      {sfInstalled ? (
-                        project.accompaniment.enabled && (
-                          <div className="mt-1.5 flex flex-wrap gap-2">
-                            {instrumentParts.map((name) => (
-                              <label key={name} className="flex items-center gap-1.5 text-xs text-zinc-500">
-                                {name}
+                    segni della partitura
+                  </label>
+                </div>
+                <div>
+                  <label className="label">Tonalità</label>
+                  <select
+                    className="field"
+                    aria-label="Tonalità"
+                    title="Sposta tutto (voci, strumenti, rullo) di qualche semitono, per adattarlo alla tua voce"
+                    value={project.transpose ?? 0}
+                    onChange={(e) => setProject((p) => ({ ...p, transpose: Number(e.target.value) }))}
+                    disabled={rendering}
+                  >
+                    {Array.from({ length: 2 * MAX_TRANSPOSE + 1 }, (_, i) => MAX_TRANSPOSE - i).map((t) => (
+                      <option key={t} value={t}>
+                        {t === 0
+                          ? "Come scritta"
+                          : `${t > 0 ? "+" : "−"}${Math.abs(t)} ${Math.abs(t) === 1 ? "semitono" : "semitoni"} ${t > 0 ? "sopra" : "sotto"}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </section>
+              <section className="card">
+                <div className="label flex items-center justify-between">
+                  <span>Voci e cantanti</span>
+                  <button className="text-violet-600 hover:underline" onClick={loadSingers} title="Rileggi i cantanti installati" disabled={rendering}>
+                    <RefreshCw className="inline h-3 w-3" /> aggiorna cantanti
+                  </button>
+                </div>
+                {singers && diffsinger.length === 0 && (
+                  <div className="mb-2 rounded-md border border-zinc-300 p-2 text-zinc-500 dark:border-zinc-700">
+                    <p>
+                      Nessun cantante installato. Muse Sing usa <b>TIGER DS</b> (di tigermeat), che canta in italiano, latino e inglese: si scarica gratis dal
+                      sito dell'autore (circa 550 MB), solo per uso non commerciale e citando l'autore.
+                    </p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <button className="btn-primary" onClick={installTiger} disabled={!!tiger || rendering}>
+                        {tiger ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Scarica Tiger
+                      </button>
+                      {tiger && <span className="text-xs">{tigerText(tiger)}</span>}
+                    </div>
+                    <p className="mt-2 text-xs">
+                      Oppure copia un voicebank DiffSinger in una di queste cartelle e premi «aggiorna cantanti»:{" "}
+                      {[...singers.folders, singers.own_folder].filter(Boolean).join(", ")}.
+                    </p>
+                  </div>
+                )}
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {parts.map((p) => {
+                    const s = singerOf(p);
+                    const info = analysis.parts.find((x) => x.name === p.name);
+                    return (
+                      <div key={p.name} className="py-2.5">
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            className="mt-1 accent-violet-600"
+                            disabled={rendering}
+                            checked={p.sing}
+                            onChange={() => setPart(p.name, { sing: !p.sing })}
+                            aria-label={`Canta ${p.name}`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium">
+                              {p.name}{" "}
+                              {info && (
+                                <span className="font-normal text-zinc-500">
+                                  · {info.notes} note · {info.syllables} sillabe
+                                </span>
+                              )}
+                            </div>
+                            {info && <div className="truncate text-xs italic text-zinc-500">{info.preview.replace(/\[[^\]]*\]/g, "")} …</div>}
+                          </div>
+                          <div className="flex shrink-0 gap-1.5">
+                            <select
+                              className="field w-28 py-1"
+                              value={p.played ? "suona" : "canta"}
+                              disabled={!p.sing || rendering}
+                              onChange={(e) => setPart(p.name, { played: e.target.value === "suona" })}
+                              title="«Suonata»: la voce è suonata al pianoforte invece che cantata, per imparare le note"
+                              aria-label={`Cantata o suonata: ${p.name}`}
+                            >
+                              <option value="canta">Cantata</option>
+                              <option value="suona">Suonata</option>
+                            </select>
+                            {!p.played && (
+                              <>
                                 <select
-                                  className="field w-40 py-0.5"
-                                  value={instrumentOf(name)}
-                                  disabled={rendering}
-                                  onChange={(e) => setProject((p) => ({ ...p, instruments: { ...(p.instruments ?? {}), [name]: e.target.value as Instrument } }))}
-                                  aria-label={`Strumento di ${name}`}
+                                  className="field w-52 py-1"
+                                  value={p.singer}
+                                  disabled={!p.sing || rendering}
+                                  onChange={(e) => setPart(p.name, { singer: e.target.value, color: null })}
+                                  aria-label={`Cantante di ${p.name}`}
                                 >
-                                  {Object.entries(INSTRUMENTS).map(([k, v]) => (
-                                    <option key={k} value={k}>
-                                      {v}
+                                  <option value="">— cantante —</option>
+                                  {diffsinger.map((x) => (
+                                    <option key={x.id} value={x.id} disabled={!x.engine}>
+                                      {singerLabel(x, project.lang)}
                                     </option>
                                   ))}
                                 </select>
-                              </label>
-                            ))}
+                                {s && s.colors.length > 1 && (
+                                  <select
+                                    className="field w-32 py-1"
+                                    value={p.color ?? ""}
+                                    disabled={!p.sing || rendering}
+                                    onChange={(e) => setPart(p.name, { color: e.target.value || null })}
+                                    title="Colore di voce"
+                                    aria-label={`Colore di voce di ${p.name}`}
+                                  >
+                                    {s.colors.map((col, i) => (
+                                      <option key={col} value={i === 0 ? "" : col}>
+                                        {col}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                                <select
+                                  className="field w-28 py-1"
+                                  value={p.voices ?? 1}
+                                  disabled={!p.sing || rendering}
+                                  onChange={(e) => setPart(p.name, { voices: Number(e.target.value) })}
+                                  title="Più coristi sulla stessa voce, ognuno con un colore diverso: suona come una sezione del coro. La generazione dura di più."
+                                  aria-label={`Coristi di ${p.name}`}
+                                >
+                                  <option value={1}>1 corista</option>
+                                  <option value={2}>2 coristi</option>
+                                  <option value={3}>3 coristi</option>
+                                </select>
+                              </>
+                            )}
+                            {p.played && <span className="self-center px-2 text-xs text-zinc-500">al pianoforte{sfInstalled ? "" : " (suono semplice)"}</span>}
                           </div>
-                        )
-                      ) : (
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                          <button className="btn py-0.5 text-xs" onClick={installSoundfont} disabled={!!sfProgress || rendering}>
-                            {sfProgress ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Scarica strumenti veri
-                          </button>
-                          {sfProgress ? tigerText(sfProgress) : "organo a canne, pianoforte, archi… (31 MB, GeneralUser GS)"}
                         </div>
-                      )}
-                    </div>
-                  </div>
-                  {project.accompaniment.enabled && (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 pl-7 text-xs text-zinc-500">
-                      <MixControls
-                        volume={project.accompaniment.volume_db}
-                        pan={project.accompaniment.pan}
-                        mute={project.accompaniment.mute}
-                        solo={project.accompaniment.solo}
-                        onChange={(patch) => setProject((p) => ({ ...p, accompaniment: { ...p.accompaniment, ...patch } }))}
-                      />
+                        {p.sing && s && !s.engine && <div className="mt-1 pl-7 text-xs text-amber-600">{s.engine_note}</div>}
+                      </div>
+                    );
+                  })}
+                  {hasInstruments && (
+                    <div className="py-2.5">
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="mt-1 accent-violet-600"
+                          disabled={rendering}
+                          checked={project.accompaniment.enabled}
+                          onChange={() => setProject((p) => ({ ...p, accompaniment: { ...p.accompaniment, enabled: !p.accompaniment.enabled } }))}
+                          aria-label="Accompagnamento"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium">
+                            Accompagnamento{" "}
+                            <span className="font-normal text-zinc-500">
+                              · {sfInstalled ? "le parti strumentali" : `${instrumentParts.join(", ")} con suono d'organo semplice`}
+                            </span>
+                          </div>
+                          {sfInstalled ? (
+                            project.accompaniment.enabled && (
+                              <div className="mt-1.5 flex flex-wrap gap-2">
+                                {instrumentParts.map((name) => (
+                                  <label key={name} className="flex items-center gap-1.5 text-xs text-zinc-500">
+                                    {name}
+                                    <select
+                                      className="field w-40 py-0.5"
+                                      value={instrumentOf(name)}
+                                      disabled={rendering}
+                                      onChange={(e) =>
+                                        setProject((p) => ({ ...p, instruments: { ...(p.instruments ?? {}), [name]: e.target.value as Instrument } }))
+                                      }
+                                      aria-label={`Strumento di ${name}`}
+                                    >
+                                      {Object.entries(INSTRUMENTS).map(([k, v]) => (
+                                        <option key={k} value={k}>
+                                          {v}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                ))}
+                              </div>
+                            )
+                          ) : (
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                              <button className="btn py-0.5 text-xs" onClick={installSoundfont} disabled={!!sfProgress || rendering}>
+                                {sfProgress ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Scarica strumenti veri
+                              </button>
+                              {sfProgress ? tigerText(sfProgress) : "organo a canne, pianoforte, archi… (31 MB, GeneralUser GS)"}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
-              )}
-              <div className="py-2.5">
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    className="mt-1 accent-violet-600"
-                    checked={!!project.metronome?.enabled}
-                    onChange={() => setProject((p) => ({ ...p, metronome: { ...p.metronome, enabled: !p.metronome?.enabled } }))}
-                    aria-label="Metronomo"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium">
-                      Metronomo <span className="font-normal text-zinc-500">· un colpo per battito, più forte sul primo della battuta</span>
+              </section>
+              <section className="card space-y-3">
+                <div className="flex items-center gap-2 font-semibold">
+                  <AudioLines className="h-4 w-4 text-violet-600" /> Genera le voci
+                </div>
+                {rendering ? (
+                  <div className="space-y-2">
+                    <div className="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                      <div className="h-full bg-violet-600 transition-all" style={{ width: `${renderPct}%` }} />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
+                      <span className="flex-1 text-zinc-600 dark:text-zinc-300">
+                        {cancelling
+                          ? "Annullamento… (finisce la frase in corso)"
+                          : progress
+                            ? `${progress.part}: ${progress.cached ? "già pronta" : `frase ${Math.min(progress.phrase + 1, progress.phrases)} di ${progress.phrases}`} · voce ${progress.index + 1} di ${progress.parts}`
+                            : "Preparo i cantanti…"}
+                      </span>
+                      <button className="btn" onClick={cancelRender} disabled={cancelling}>
+                        <X className="h-4 w-4" /> Annulla
+                      </button>
                     </div>
                   </div>
-                </div>
-                {project.metronome?.enabled && (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 pl-7 text-xs text-zinc-500">
-                    <MixControls
-                      volume={project.metronome.volume_db}
-                      pan={project.metronome.pan}
-                      mute={project.metronome.mute}
-                      solo={project.metronome.solo}
-                      onChange={(patch) => setProject((p) => ({ ...p, metronome: { ...p.metronome, ...patch } }))}
-                    />
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      className="btn-primary"
+                      onClick={() => startRender()}
+                      disabled={busy || nothing || missingSinger.length > 0 || notEngine.length > 0}
+                    >
+                      <Mic2 className="h-4 w-4" /> {rendered ? "Genera di nuovo" : "Genera audio"}
+                    </button>
+                    {nothing ? (
+                      <span className="text-zinc-500">Scegli almeno una voce o l'accompagnamento.</span>
+                    ) : missingSinger.length > 0 ? (
+                      <span className="text-zinc-500">Scegli il cantante per: {missingSinger.map((p) => p.name).join(", ")}.</span>
+                    ) : notEngine.length > 0 ? (
+                      <span className="text-amber-600">{notEngine.map((p) => p.name).join(", ")}: il cantante scelto non è supportato.</span>
+                    ) : rendered && !upToDate ? (
+                      <span className="text-amber-600">Hai cambiato voci, cantanti, lingua, intonazione, velocità o ritocchi: genera di nuovo.</span>
+                    ) : !rendered ? (
+                      <span className="text-zinc-500">Le voci già generate con le stesse scelte si riusano subito.</span>
+                    ) : null}
                   </div>
                 )}
-              </div>
-            </div>
-          </section>
-
-          <section className="card space-y-3">
-            <div className="flex items-center gap-2 font-semibold">
-              <AudioLines className="h-4 w-4 text-violet-600" /> Audio cantato
-            </div>
-            {rendering ? (
-              <div className="space-y-2">
-                <div className="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                  <div className="h-full bg-violet-600 transition-all" style={{ width: `${renderPct}%` }} />
-                </div>
-                <div className="flex items-center gap-3">
-                  <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
-                  <span className="flex-1 text-zinc-600 dark:text-zinc-300">
-                    {cancelling
-                      ? "Annullamento… (finisce la frase in corso)"
-                      : progress
-                        ? `${progress.part}: ${progress.cached ? "già pronta" : `frase ${Math.min(progress.phrase + 1, progress.phrases)} di ${progress.phrases}`} · voce ${progress.index + 1} di ${progress.parts}`
-                        : "Preparo i cantanti…"}
-                  </span>
-                  <button className="btn" onClick={cancelRender} disabled={cancelling}>
-                    <X className="h-4 w-4" /> Annulla
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center gap-3">
-                <button className="btn-primary" onClick={() => startRender()} disabled={busy || nothing || missingSinger.length > 0 || notEngine.length > 0}>
-                  <Mic2 className="h-4 w-4" /> {rendered ? "Genera di nuovo" : "Genera audio"}
-                </button>
-                {nothing ? (
-                  <span className="text-zinc-500">Scegli almeno una voce o l'accompagnamento.</span>
-                ) : missingSinger.length > 0 ? (
-                  <span className="text-zinc-500">Scegli il cantante per: {missingSinger.map((p) => p.name).join(", ")}.</span>
-                ) : notEngine.length > 0 ? (
-                  <span className="text-amber-600">{notEngine.map((p) => p.name).join(", ")}: il cantante scelto non è supportato.</span>
-                ) : rendered && !upToDate ? (
-                  <span className="text-amber-600">Hai cambiato voci, cantanti, lingua, intonazione, velocità o ritocchi: genera di nuovo.</span>
-                ) : !rendered ? (
-                  <span className="text-zinc-500">Le voci già generate con le stesse scelte si riusano subito.</span>
-                ) : null}
-              </div>
-            )}
-
-            {rendered && upToDate && !rendering && (
-              <>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button className="btn" onClick={() => (play ? stopPlay() : startPlay(loop && (cursor < loop[0] || cursor > loop[1]) ? loop[0] : cursor, loop))}>
-                    {play ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />} {play ? "Ferma" : "Ascolta"}
-                  </button>
-                  <label className="flex items-center gap-1.5 text-xs text-zinc-500" title="Una battuta di colpi prima di partire, con l'accordo di partenza (non quando ripeti un tratto)">
-                    <input type="checkbox" className="accent-violet-600" checked={countIn} onChange={() => setProject((p) => ({ ...p, count_in: !p.count_in }))} />
-                    conteggio
-                  </label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(1, total)}
-                    step={0.1}
-                    value={Math.min(pos, total)}
-                    onChange={(e) => seek(Number(e.target.value))}
-                    className="min-w-40 flex-1 accent-violet-600"
-                    aria-label="Posizione"
-                  />
-                  <span className="w-24 text-right tabular-nums text-zinc-500">
-                    {fmtDuration(pos)} / {fmtDuration(total)}
-                  </span>
-                  {loop && (
-                    <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
-                      <Repeat className="h-3.5 w-3.5" /> {fmtDuration(loop[0])}–{fmtDuration(loop[1])}
-                      <button onClick={() => setLoop(null)} title="Togli la ripetizione">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button className="btn" onClick={exportAudio} disabled={exporting}>
-                    {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Esporta…
-                  </button>
-                  <button
-                    className="btn"
-                    onClick={exportGuides}
-                    disabled={exporting || sung.length < 2}
-                    title="Un MP3 per ogni voce: con quella voce in evidenza, oppure senza (per cantarci sopra)"
-                  >
-                    <Headphones className="h-4 w-4" /> Basi di studio…
-                  </button>
-                  <select
-                    className="field w-auto py-0.5 text-xs"
-                    aria-label="Tipo di basi"
-                    value={project.guides ?? "evidenza"}
-                    onChange={(e) => setProject((p) => ({ ...p, guides: e.target.value as GuideKind }))}
-                  >
-                    <option value="evidenza">voce in evidenza</option>
-                    <option value="senza">senza la propria voce</option>
-                    <option value="entrambe">entrambe</option>
-                  </select>
-                  <label className={`flex items-center gap-2 text-xs text-zinc-500 ${(project.guides ?? "evidenza") === "senza" ? "hidden" : ""}`}>
-                    altre voci
-                    <select className="field w-24 py-0.5" value={guideDb} onChange={(e) => setGuideDb(Number(e.target.value))}>
-                      {[-6, -10, -15, -20].map((d) => (
-                        <option key={d} value={d}>
-                          {d} dB
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                {rendered.warnings.length > 0 && (
+                {rendered && upToDate && !rendering && (
+                  <div className="flex flex-wrap items-center gap-3 text-emerald-700 dark:text-emerald-300">
+                    <CheckCircle2 className="h-4 w-4" /> Voci pronte.
+                    <button className="btn" onClick={() => setTab("studia")}>
+                      Vai a Studia →
+                    </button>
+                  </div>
+                )}
+                {rendered && rendered.warnings.length > 0 && (
                   <div className="text-xs text-amber-700 dark:text-amber-300">
                     <button className="hover:underline" onClick={() => setShowWarnings(!showWarnings)}>
                       <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
@@ -1288,82 +1135,238 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                     )}
                   </div>
                 )}
-              </>
-            )}
-
-            {notice && (
-              <div className="flex items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2.5 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-                <CheckCircle2 className="h-5 w-5 shrink-0" />
-                <div className="min-w-0 flex-1 truncate">{notice.text}</div>
-                {notice.path && (
-                  <button className="btn" onClick={() => revealItemInDir(notice.path!)}>
-                    <FolderOpen className="h-4 w-4" /> Mostra nel Finder
-                  </button>
-                )}
-              </div>
-            )}
-          </section>
-
-          {roll && roll.parts.length > 0 && (
-            <section className="card">
-              <ScoreRoll
-                parts={roll.parts}
-                bars={roll.bars ?? []}
-                cursor={pos}
-                playing={!!play || !!checking}
-                highlight={mine}
-                loop={loop}
-                check={
-                  checkResult && {
-                    part: checkResult.part,
-                    verdicts: Object.fromEntries(checkResult.notes.map((n) => [n.id, n.verdict])),
-                    line: checkResult.line,
-                  }
-                }
-                onSeek={seek}
-                onLoop={(r) => {
-                  setLoop(r);
-                  if (r) setCursor(r[0]);
-                }}
+              </section>
+              {roll && rendered && sung.length > 0 && (
+                <section className="card">
+                  <Editor
+                    parts={voiced.map((p) => p.name)}
+                    roll={roll}
+                    edits={project.edits}
+                    initialPart={mine}
+                    rendered={rendered}
+                    upToDate={upToDate}
+                    rendering={rendering}
+                    cursor={pos}
+                    playing={!!play}
+                    onChange={(part, e) => setProject((p) => ({ ...p, edits: { ...p.edits, [part]: e } }))}
+                    onSeek={seek}
+                    onApply={setApplyFrom}
+                  />
+                </section>
+              )}
+            </>
+          ) : (
+            <>
+              {(!upToDate || rendering) && (
+                <section className="card space-y-3 border-amber-300 dark:border-amber-800">
+                  {rendering ? (
+                    <div className="space-y-2">
+                      <div className="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                        <div className="h-full bg-violet-600 transition-all" style={{ width: `${renderPct}%` }} />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
+                        <span className="flex-1 text-zinc-600 dark:text-zinc-300">
+                          {cancelling
+                            ? "Annullamento… (finisce la frase in corso)"
+                            : progress
+                              ? `${progress.part}: ${progress.cached ? "già pronta" : `frase ${Math.min(progress.phrase + 1, progress.phrases)} di ${progress.phrases}`} · voce ${progress.index + 1} di ${progress.parts}`
+                              : "Preparo i cantanti…"}
+                        </span>
+                        <button className="btn" onClick={cancelRender} disabled={cancelling}>
+                          <X className="h-4 w-4" /> Annulla
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        className="btn-primary"
+                        onClick={() => startRender()}
+                        disabled={busy || nothing || missingSinger.length > 0 || notEngine.length > 0}
+                      >
+                        <Mic2 className="h-4 w-4" /> {rendered ? "Genera di nuovo" : "Genera audio"}
+                      </button>
+                      {nothing ? (
+                        <span className="text-zinc-500">Scegli almeno una voce o l'accompagnamento.</span>
+                      ) : missingSinger.length > 0 ? (
+                        <span className="text-zinc-500">Scegli il cantante per: {missingSinger.map((p) => p.name).join(", ")}.</span>
+                      ) : notEngine.length > 0 ? (
+                        <span className="text-amber-600">{notEngine.map((p) => p.name).join(", ")}: il cantante scelto non è supportato.</span>
+                      ) : rendered && !upToDate ? (
+                        <span className="text-amber-600">Hai cambiato voci, cantanti, lingua, intonazione, velocità o ritocchi: genera di nuovo.</span>
+                      ) : !rendered ? (
+                        <span className="text-zinc-500">Le voci già generate con le stesse scelte si riusano subito.</span>
+                      ) : null}
+                    </div>
+                  )}
+                </section>
+              )}
+              <section className="card flex flex-wrap items-center gap-3">
+                <label className="label mb-0" htmlFor="io-canto">
+                  Io canto
+                </label>
+                <select id="io-canto" className="field w-56" value={mineSung ?? ""} onChange={(e) => chooseMine(e.target.value || null)} disabled={!!checking}>
+                  <option value="">— nessuna voce —</option>
+                  {sung.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-zinc-500">La tua voce è evidenziata nel rullo ed è quella di Canta e controlla.</span>
+              </section>
+              <Mixer
+                parts={sung}
+                mine={mineSung}
+                accompaniment={accompOn ? project.accompaniment : null}
+                metronome={project.metronome ?? { enabled: false, volume_db: -6, pan: 0, mute: false, solo: false }}
+                ambience={ambience}
+                reverb={room.reverb}
+                onPart={(name, patch) => setPart(name, patch)}
+                onAccompaniment={(patch) => setProject((p) => ({ ...p, accompaniment: { ...p.accompaniment, ...patch } }))}
+                onMetronome={(patch) => setProject((p) => ({ ...p, metronome: { ...p.metronome, ...patch } }))}
+                onAmbience={(a) => setProject((p) => ({ ...p, ambience: a }))}
+                onReverb={(r) => setProject((p) => ({ ...p, reverb: r }))}
+                disabled={!!checking}
               />
-            </section>
-          )}
-
-          {roll && rendered && upToDate && sung.length > 0 && (
-            <CheckPanel
-              mine={mineSung}
-              ownVoice={ownVoice}
-              onOwnVoice={setOwnVoice}
-              checking={checking ? (checking.analyzing ? "analyzing" : checking.counting ? "counting" : "singing") : null}
-              level={checking?.level ?? 0}
-              result={checkResult}
-              summary={checkSummary}
-              stretch={stretch}
-              onStart={startCheck}
-              onStop={() => singApi.stop()}
-              onReplay={replayCheck}
-              onClear={() => setCheckResult(null)}
-              disabled={rendering || exporting}
-            />
-          )}
-
-          {roll && rendered && sung.length > 0 && (
-            <section className="card">
-              <Editor
-                parts={voiced.map((p) => p.name)}
-                roll={roll}
-                edits={project.edits}
-                initialPart={mine}
-                rendered={rendered}
-                upToDate={upToDate}
-                rendering={rendering}
-                cursor={pos}
-                playing={!!play}
-                onChange={(part, e) => setProject((p) => ({ ...p, edits: { ...p.edits, [part]: e } }))}
-                onSeek={seek}
-                onApply={setApplyFrom}
-              />
-            </section>
+              {rendered && upToDate && !rendering && (
+                <section className="card space-y-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      className="btn"
+                      onClick={() => (play ? stopPlay() : startPlay(loop && (cursor < loop[0] || cursor > loop[1]) ? loop[0] : cursor, loop))}
+                    >
+                      {play ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />} {play ? "Ferma" : "Ascolta"}
+                    </button>
+                    <label
+                      className="flex items-center gap-1.5 text-xs text-zinc-500"
+                      title="Una battuta di colpi prima di partire, con l'accordo di partenza (non quando ripeti un tratto)"
+                    >
+                      <input
+                        type="checkbox"
+                        className="accent-violet-600"
+                        checked={countIn}
+                        onChange={() => setProject((p) => ({ ...p, count_in: !p.count_in }))}
+                      />
+                      conteggio
+                    </label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.max(1, total)}
+                      step={0.1}
+                      value={Math.min(pos, total)}
+                      onChange={(e) => seek(Number(e.target.value))}
+                      className="min-w-40 flex-1 accent-violet-600"
+                      aria-label="Posizione"
+                    />
+                    <span className="w-24 text-right tabular-nums text-zinc-500">
+                      {fmtDuration(pos)} / {fmtDuration(total)}
+                    </span>
+                    {loop && (
+                      <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+                        <Repeat className="h-3.5 w-3.5" /> {fmtDuration(loop[0])}–{fmtDuration(loop[1])}
+                        <button onClick={() => setLoop(null)} title="Togli la ripetizione">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                </section>
+              )}
+              {roll && roll.parts.length > 0 && (
+                <section className="card">
+                  <ScoreRoll
+                    parts={roll.parts}
+                    bars={roll.bars ?? []}
+                    cursor={pos}
+                    playing={!!play || !!checking}
+                    highlight={mine}
+                    loop={loop}
+                    check={
+                      checkResult && {
+                        part: checkResult.part,
+                        verdicts: Object.fromEntries(checkResult.notes.map((n) => [n.id, n.verdict])),
+                        line: checkResult.line,
+                      }
+                    }
+                    onSeek={seek}
+                    onLoop={(r) => {
+                      setLoop(r);
+                      if (r) setCursor(r[0]);
+                    }}
+                  />
+                </section>
+              )}
+              {roll && rendered && upToDate && sung.length > 0 && (
+                <CheckPanel
+                  mine={mineSung}
+                  ownVoice={ownVoice}
+                  onOwnVoice={setOwnVoice}
+                  checking={checking ? (checking.analyzing ? "analyzing" : checking.counting ? "counting" : "singing") : null}
+                  level={checking?.level ?? 0}
+                  result={checkResult}
+                  summary={checkSummary}
+                  stretch={stretch}
+                  onStart={startCheck}
+                  onStop={() => singApi.stop()}
+                  onReplay={replayCheck}
+                  onClear={() => setCheckResult(null)}
+              active={active}
+                  disabled={rendering || exporting}
+                />
+              )}
+              {rendered && upToDate && !rendering && (
+                <section className="card space-y-3">
+                  <div className="label">Esporta</div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button className="btn" onClick={exportAudio} disabled={exporting}>
+                      {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Esporta…
+                    </button>
+                    <button
+                      className="btn"
+                      onClick={exportGuides}
+                      disabled={exporting || sung.length < 2}
+                      title="Un MP3 per ogni voce: con quella voce in evidenza, oppure senza (per cantarci sopra)"
+                    >
+                      <Headphones className="h-4 w-4" /> Basi di studio…
+                    </button>
+                    <select
+                      className="field w-auto py-0.5 text-xs"
+                      aria-label="Tipo di basi"
+                      value={project.guides ?? "evidenza"}
+                      onChange={(e) => setProject((p) => ({ ...p, guides: e.target.value as GuideKind }))}
+                    >
+                      <option value="evidenza">voce in evidenza</option>
+                      <option value="senza">senza la propria voce</option>
+                      <option value="entrambe">entrambe</option>
+                    </select>
+                    <label className={`flex items-center gap-2 text-xs text-zinc-500 ${(project.guides ?? "evidenza") === "senza" ? "hidden" : ""}`}>
+                      altre voci
+                      <select className="field w-24 py-0.5" value={guideDb} onChange={(e) => setGuideDb(Number(e.target.value))}>
+                        {[-6, -10, -15, -20].map((d) => (
+                          <option key={d} value={d}>
+                            {d} dB
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  {notice && (
+                    <div className="flex items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2.5 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
+                      <CheckCircle2 className="h-5 w-5 shrink-0" />
+                      <div className="min-w-0 flex-1 truncate">{notice.text}</div>
+                      {notice.path && (
+                        <button className="btn" onClick={() => revealItemInDir(notice.path!)}>
+                          <FolderOpen className="h-4 w-4" /> Mostra nel Finder
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
+            </>
           )}
         </>
       )}
@@ -1379,8 +1382,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
       )}
 
       <footer className="pt-2 text-xs text-zinc-500">
-        L'audio è generato sul Mac con il motore DiffSinger di Muse Sing (derivato da OpenUtau). TIGER DS (tigermeat) è gratuito solo per uso non
-        commerciale, citando l'autore.
+        L'audio è generato sul Mac con il motore DiffSinger di Muse Sing (derivato da OpenUtau). TIGER DS (tigermeat) è gratuito solo per uso non commerciale,
+        citando l'autore.
       </footer>
     </main>
   );

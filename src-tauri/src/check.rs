@@ -259,6 +259,12 @@ mod tests {
         assert_eq!(ids, ["n1", "n2", "n3", "n4", "n5", "short"], "n0 starts before the stretch");
         assert_eq!(got.last().unwrap().verdict, Verdict::NotJudged);
         let line = sung_line(&ns, &track, 0.0, (0.0, 10.0));
-        assert!(line.iter().all(|(t, m)| ns.iter().any(|n| (m - n.pitch as f32).abs() < 0.5 && *t > n.start - 0.1 && *t < n.end + 0.1)));
+        // a frame right on the boundary between two notes holds half of each
+        let boundary = |t: f64| ns.iter().any(|n| (t - n.start).abs() < 0.025 || (t - n.end).abs() < 0.025);
+        let stray: Vec<_> = line
+            .iter()
+            .filter(|(t, m)| !boundary(*t) && !ns.iter().any(|n| (m - n.pitch as f32).abs() < 0.5 && *t > n.start - 0.1 && *t < n.end + 0.1))
+            .collect();
+        assert!(stray.is_empty(), "{stray:?}");
     }
 }

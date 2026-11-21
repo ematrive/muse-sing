@@ -975,6 +975,14 @@ impl Engine {
             }
             return Err(Error::Other("registrazione non allineabile: riprova".into()));
         };
+        crate::log!(
+            "canta e controlla: allineato con {} (timestamp {:?}, contatore {:?}), {:.1} s ascoltati{}",
+            if by_ts.is_some() && Some(click) == by_ts { "timestamp" } else { "contatore" },
+            by_ts,
+            mark,
+            heard,
+            if stopped { ", fermato" } else { "" }
+        );
         let to = click + (heard * in_rate as f64) as u64;
         if !stopped {
             // wait for the input to deliver the last frames

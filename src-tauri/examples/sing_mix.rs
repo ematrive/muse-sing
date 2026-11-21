@@ -4,6 +4,7 @@
 //!   cargo run --release --example sing_mix -- <score> <voicebank dir> <out.mp3>
 //!       [--voices 1|2|3] [--ambience nessuno|stanza|chiesa|cattedrale] [--reverb 0..1] [--color COLOR] [--no-accomp]
 //!       [--soundfont GeneralUser-GS.sf2] [--instrument organo_canne|pianoforte|archi|…] [--metronome] [--played PART]
+//!       [--no-marks] [--transpose N]
 use std::path::PathBuf;
 
 use muse_sing_lib::fx::Ambience;
@@ -18,7 +19,7 @@ fn main() {
     let pos: Vec<&String> = {
         let (mut v, mut i) = (vec![], 0);
         while i < args.len() {
-            if ["--no-accomp", "--metronome"].contains(&args[i].as_str()) {
+            if ["--no-accomp", "--metronome", "--no-marks"].contains(&args[i].as_str()) {
                 i += 1
             } else if args[i].starts_with("--") {
                 i += 2
@@ -65,6 +66,8 @@ fn main() {
             }
             None => Default::default(),
         },
+        marks: !args.iter().any(|a| a == "--no-marks"),
+        transpose: opt("--transpose").and_then(|v| v.parse().ok()).unwrap_or(0),
         soundfont: opt("--soundfont").map(PathBuf::from),
     };
     let cache = std::env::temp_dir().join("muse-sing-mix-cache");

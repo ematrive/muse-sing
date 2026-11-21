@@ -141,6 +141,23 @@ pub struct Project {
     /// A measure of clicks before playback starts.
     #[serde(default)]
     pub count_in: bool,
+    /// Follow the dynamics, breaths, fermatas and rit./accel. of the score.
+    #[serde(default = "yes")]
+    pub marks: bool,
+    /// Semitones up or down (±6).
+    #[serde(default)]
+    pub transpose: i32,
+    /// Study tracks: "evidenza" (the part louder), "senza" (without the part) or "entrambe".
+    #[serde(default = "default_guides")]
+    pub guides: String,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn default_guides() -> String {
+    "evidenza".into()
 }
 
 fn default_reverb() -> f32 {
@@ -164,6 +181,9 @@ impl Project {
             instruments: HashMap::new(),
             metronome: AccompCfg::default(),
             count_in: false,
+            marks: true,
+            transpose: 0,
+            guides: default_guides(),
         }
     }
 }
@@ -276,6 +296,7 @@ mod tests {
         assert_eq!(p.parts[0].voices, 1);
         assert_eq!(p.reverb, crate::fx::DEFAULT_AMOUNT);
         assert_eq!(p.ambience, crate::fx::Ambience::Nessuno, "saved projects keep their dry sound");
+        assert!(p.marks && p.transpose == 0 && p.guides == "evidenza");
         let n = Project::new("t", "s.mscz", Lang::It, vec![], false);
         assert_eq!(n.ambience, crate::fx::Ambience::Chiesa);
         let back: Project = serde_json::from_str(&serde_json::to_string(&n).unwrap()).unwrap();

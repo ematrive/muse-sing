@@ -52,6 +52,104 @@ pub struct Part {
     pub notes: Vec<Note>,
     /// Every note of every voice, chords included, ties merged: what an instrument plays.
     pub tones: Vec<Tone>,
+    /// Dynamics, hairpins, breaths, fermatas and tempo words, as played (see `marks.rs`).
+    pub marks: Marks,
+}
+
+/// Start of a hairpin, or its end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hairpin {
+    Cresc,
+    Dim,
+    End,
+}
+
+/// A written change of tempo without a metronome mark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TempoWord {
+    /// rit., rall., allarg.
+    Slower,
+    /// accel., string.
+    Faster,
+    /// End of a rit./accel. line.
+    End,
+    /// a tempo, tempo I
+    ATempo,
+}
+
+impl TempoWord {
+    /// From the text written in the score ("rit.", "poco rall.", "a tempo"…). Whole words only:
+    /// "ritornello" is not a ritardando.
+    pub fn from_text(text: &str) -> Option<TempoWord> {
+        let t = text.to_lowercase();
+        let words: Vec<&str> = t.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+        let has = |keys: &[&str]| words.iter().any(|w| keys.contains(w));
+        if t.contains("a tempo") || t.contains("tempo i") || t.contains("tempo primo") {
+            Some(TempoWord::ATempo)
+        } else if has(&["rit", "ritard", "ritardando", "riten", "ritenuto", "rall", "rallent", "rallentando", "allarg", "allargando", "slower"]) {
+            Some(TempoWord::Slower)
+        } else if has(&["accel", "accelerando", "string", "stringendo", "faster"]) {
+            Some(TempoWord::Faster)
+        } else {
+            None
+        }
+    }
+}
+
+/// Dynamic level in dB relative to mezzo forte, from its name ("p", "mf"…).
+pub fn dynamic_db(name: &str) -> Option<f32> {
+    Some(match name.trim() {
+        "pppp" => -22.0,
+        "ppp" => -18.0,
+        "pp" => -13.0,
+        "p" | "fp" => -8.0,
+        "mp" => -4.0,
+        "mf" => 0.0,
+        "f" => 3.0,
+        "ff" => 5.0,
+        "fff" => 7.0,
+        "ffff" => 9.0,
+        _ => return None,
+    })
+}
+
+/// Performance markings of a part. Positions in quarter notes, in the measure while reading,
+/// on the played timeline in `Part`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Marks {
+    /// (position, dB relative to mf)
+    pub dynamics: Vec<(Beats, f32)>,
+    pub hairpins: Vec<(Beats, Hairpin)>,
+    /// Where a breath is written: the end of the note before the mark.
+    pub breaths: Vec<Beats>,
+    /// (start, duration) of a note or rest with a fermata.
+    pub fermatas: Vec<(Beats, Beats)>,
+    pub tempo: Vec<(Beats, TempoWord)>,
+}
+
+impl Marks {
+    fn is_empty(&self) -> bool {
+        self.dynamics.is_empty() && self.hairpins.is_empty() && self.breaths.is_empty() && self.fermatas.is_empty() && self.tempo.is_empty()
+    }
+
+    /// Adds `o`, moved by `by`.
+    fn extend_at(&mut self, o: &Marks, by: Beats) {
+        self.dynamics.extend(o.dynamics.iter().map(|&(a, d)| (a + by, d)));
+        self.hairpins.extend(o.hairpins.iter().map(|&(a, h)| (a + by, h)));
+        self.breaths.extend(o.breaths.iter().map(|&a| a + by));
+        self.fermatas.extend(o.fermatas.iter().map(|&(a, d)| (a + by, d)));
+        self.tempo.extend(o.tempo.iter().map(|&(a, w)| (a + by, w)));
+    }
+
+    fn sort(&mut self) {
+        self.dynamics.sort_by_key(|a| a.0);
+        self.hairpins.sort_by_key(|a| a.0);
+        self.breaths.sort();
+        self.breaths.dedup();
+        self.fermatas.sort();
+        self.fermatas.dedup();
+        self.tempo.sort_by_key(|a| a.0);
+    }
 }
 
 impl Part {
@@ -367,6 +465,7 @@ pub(crate) fn assemble(
         }
         let mut notes: Vec<(Note, bool)> = vec![];
         let mut tones: Vec<Tone> = vec![];
+        let mut marks = Marks::default();
         // last tone of each pitch, to merge ties
         let mut last_tone: HashMap<i32, usize> = HashMap::new();
         let mut mstart: Beats = Ratio::from_integer(0);
@@ -394,6 +493,9 @@ pub(crate) fn assemble(
                     let id = format!("{}.{occurrence}.{off}", mi + 1);
                     notes.push((Note { id, start: mstart + n.offset, dur: n.dur, pitch: n.pitch, lyric }, n.tie_prev));
                 }
+                if !m.marks.is_empty() {
+                    marks.extend_at(&m.marks, mstart);
+                }
                 for t in &m.tones {
                     let start = mstart + t.offset;
                     if t.tie_prev
@@ -420,7 +522,8 @@ pub(crate) fn assemble(
         // the same pitch struck twice at once (two voices sharing a note): one, the longer
         tones.sort_by(|a, b| a.start.cmp(&b.start).then(a.pitch.cmp(&b.pitch)).then(b.dur.cmp(&a.dur)));
         tones.dedup_by(|b, a| a.start == b.start && a.pitch == b.pitch);
-        parts.push(Part { name, notes: merged, tones });
+        marks.sort();
+        parts.push(Part { name, notes: merged, tones, marks });
     }
     // tempo marks of the other staves (rare): keep the first staff's, add the missing ones
     if tempos.is_empty() {
@@ -524,6 +627,7 @@ pub(crate) struct MeasureData {
     pub time_sig: Option<(i32, i32)>,
     /// Printed number (`None`: left out of the count).
     pub number: Option<String>,
+    pub marks: Marks,
 }
 
 fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<String>) -> MeasureData {
@@ -538,6 +642,7 @@ fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<
     let mut tempos = vec![];
     let mut time_sig = None;
     let mut tones: Vec<ToneData> = vec![];
+    let mut marks = Marks::default();
     let mut mlen: Option<Beats> = None;
     let zero: Beats = Ratio::from_integer(0);
     for (vi, voice) in meas.children().filter(|c| c.has_tag_name("voice")).enumerate() {
@@ -545,8 +650,42 @@ fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<
         // <location> can move back (e.g. chord symbols): the measure ends at the furthest point
         let mut max_pos = zero;
         let mut tuplet: Beats = Ratio::from_integer(1);
+        // a <Fermata> comes just before the chord or rest it holds
+        let mut fermata = false;
         for el in voice.children().filter(|c| c.is_element()) {
             match el.tag_name().name() {
+                // written after the chord it follows, where the next one starts
+                "Breath" => marks.breaths.push(pos),
+                "Fermata" => fermata = true,
+                "Dynamic" => {
+                    if let Some(db) = child_text(el, "subtype").and_then(dynamic_db) {
+                        marks.dynamics.push((pos, db));
+                    }
+                }
+                // subtype 0 / 2: crescendo (hairpin / "cresc." line), 1 / 3: diminuendo
+                "Spanner" if el.attribute("type") == Some("HairPin") => {
+                    if let Some(h) = child(el, "HairPin") {
+                        let dim = matches!(child_text(h, "subtype").map(str::trim), Some("1" | "3"));
+                        marks.hairpins.push((pos, if dim { Hairpin::Dim } else { Hairpin::Cresc }));
+                    } else if child(el, "prev").is_some() {
+                        marks.hairpins.push((pos, Hairpin::End));
+                    }
+                }
+                // rit./accel. line: the start names the change, the end comes back with <prev>
+                "Spanner" if el.attribute("type") == Some("GradualTempoChange") => {
+                    if let Some(g) = child(el, "GradualTempoChange") {
+                        let kind = child_text(g, "tempoChangeType").unwrap_or("");
+                        let faster = ["accelerando", "stringendo", "precipitando"].iter().any(|k| kind.contains(k));
+                        marks.tempo.push((pos, if faster { TempoWord::Faster } else { TempoWord::Slower }));
+                    } else if child(el, "prev").is_some() {
+                        marks.tempo.push((pos, TempoWord::End));
+                    }
+                }
+                "StaffText" | "SystemText" | "Expression" => {
+                    if let Some(w) = child(el, "text").map(all_text).as_deref().and_then(TempoWord::from_text) {
+                        marks.tempo.push((pos, w));
+                    }
+                }
                 "TimeSig" => {
                     let n = child_text(el, "sigN").and_then(|s| s.parse().ok()).unwrap_or(4);
                     let d = child_text(el, "sigD").and_then(|s| s.parse().ok()).unwrap_or(4);
@@ -555,6 +694,9 @@ fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<
                 "Tempo" => {
                     if let Some(t) = child_text(el, "tempo").and_then(|s| s.parse::<f64>().ok()) {
                         tempos.push((pos, t));
+                    }
+                    if child(el, "text").map(all_text).as_deref().and_then(TempoWord::from_text) == Some(TempoWord::ATempo) {
+                        marks.tempo.push((pos, TempoWord::ATempo));
                     }
                 }
                 "Marker" => {
@@ -599,6 +741,9 @@ fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<
                         continue; // grace notes take no time
                     }
                     let ln = chord_len(el, tuplet);
+                    if std::mem::take(&mut fermata) {
+                        marks.fermatas.push((pos, ln));
+                    }
                     if el.has_tag_name("Chord") {
                         let note_els: Vec<_> = el.children().filter(|c| c.has_tag_name("Note")).collect();
                         let silent = !note_els.is_empty() && note_els.iter().all(|n| child_text(*n, "play") == Some("0"));
@@ -647,7 +792,7 @@ fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<
     if let Some(l) = meas.attribute("len").and_then(ratio) {
         mlen = Some(l * 4);
     }
-    MeasureData { len: mlen.unwrap_or(zero), notes, tones, tempos, structure: st, time_sig, number: None }
+    MeasureData { len: mlen.unwrap_or(zero), notes, tones, tempos, structure: st, time_sig, number: None, marks }
 }
 
 /// Measures in playback order, each with its pass number through the current repeat (1-based,
@@ -797,6 +942,34 @@ mod tests {
             got,
             vec![(0, None, Some((2, 4))), (1, Some("1"), None), (3, Some("2"), None), (5, Some("1"), None), (7, Some("2"), None), (9, Some("3"), Some((4, 4)))]
         );
+    }
+
+    #[test]
+    fn performance_marks() {
+        // shapes from MuseScore 4.7: dynamic and fermata before their chord, hairpin and
+        // rit. lines with their end where they stop, breath after its chord
+        let c = |p: i32| format!("<Chord><durationType>quarter</durationType><Note><pitch>{p}</pitch></Note></Chord>");
+        let xml = format!(
+            r#"<museScore><Score><Staff id="1">
+            <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig><Dynamic><subtype>p</subtype><velocity>49</velocity></Dynamic>
+              <Spanner type="HairPin"><HairPin><subtype>0</subtype></HairPin><next><location><measures>1</measures></location></next></Spanner>
+              {}{}{}{}<Breath><symbol>breathMarkComma</symbol></Breath></voice></Measure>
+            <Measure><voice><Spanner type="HairPin"><prev><location><measures>-1</measures></location></prev></Spanner>
+              <Dynamic><subtype>f</subtype></Dynamic><Spanner type="GradualTempoChange"><GradualTempoChange><tempoChangeType>ritardando</tempoChangeType><beginText>rit.</beginText></GradualTempoChange><next><location><fractions>1/2</fractions></location></next></Spanner>
+              {}{}<Spanner type="GradualTempoChange"><prev><location><fractions>-1/2</fractions></location></prev></Spanner>
+              <Spanner type="HairPin"><HairPin><subtype>3</subtype></HairPin><next><location><fractions>1/4</fractions></location></next></Spanner>{}
+              <Spanner type="HairPin"><prev><location><fractions>-1/4</fractions></location></prev></Spanner><Fermata><subtype>fermataAbove</subtype></Fermata>{}</voice></Measure>
+            </Staff></Score></museScore>"#,
+            c(60), c(62), c(64), c(65), c(67), c(65), c(64), c(62)
+        );
+        let s = parse_mscx(&xml).unwrap();
+        let m = &s.parts[0].marks;
+        let b = |n: i64| Ratio::from_integer(n);
+        assert_eq!(m.dynamics, vec![(b(0), -8.0), (b(4), 3.0)]);
+        assert_eq!(m.hairpins, vec![(b(0), Hairpin::Cresc), (b(4), Hairpin::End), (b(6), Hairpin::Dim), (b(7), Hairpin::End)]);
+        assert_eq!(m.breaths, vec![b(4)]);
+        assert_eq!(m.fermatas, vec![(b(7), b(1))]);
+        assert_eq!(m.tempo, vec![(b(4), TempoWord::Slower), (b(6), TempoWord::End)]);
     }
 
     #[test]

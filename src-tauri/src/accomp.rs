@@ -39,7 +39,6 @@ pub fn render(
     sr: u32,
     chosen: &HashMap<String, Instrument>,
     sf: Option<&Arc<SoundFont>>,
-    transpose: i32,
 ) -> Vec<f32> {
     let parts: Vec<_> = score.parts.iter().filter(|p| !p.is_sung()).collect();
     let names: Vec<String> = parts.iter().map(|p| p.name.clone()).collect();
@@ -49,9 +48,9 @@ pub fn render(
         .zip(insts)
         .map(|(p, instrument)| {
             let notes = if p.tones.is_empty() {
-                p.notes.iter().map(|n| (secs(axis, n.start), secs(axis, n.start + n.dur), n.pitch + transpose)).collect()
+                p.notes.iter().map(|n| (secs(axis, n.start), secs(axis, n.start + n.dur), n.pitch)).collect()
             } else {
-                p.tones.iter().map(|t| (secs(axis, t.start), secs(axis, t.start + t.dur), t.pitch + transpose)).collect()
+                p.tones.iter().map(|t| (secs(axis, t.start), secs(axis, t.start + t.dur), t.pitch)).collect()
             };
             Line { instrument, notes, velocity: ACCOMP_VELOCITY }
         })
@@ -223,10 +222,11 @@ mod tests {
                 Tone { start: Ratio::from_integer(0), dur: Ratio::from_integer(1), pitch: 64 },
                 Tone { start: Ratio::from_integer(1), dur: Ratio::from_integer(1), pitch: 67 },
             ],
+            ..Default::default()
         };
         let sc = score(vec![], vec![organ, Part { name: "Soprano".into(), notes: vec![note(4, 1, 72, true)], ..Default::default() }]);
         let axis = TimeAxis::new(&[(0, 60.0)], TICKS);
-        let buf = render(&sc, &axis, 8000, &HashMap::new(), None, 0);
+        let buf = render(&sc, &axis, 8000, &HashMap::new(), None);
         // two quarter notes at 60 bpm = 2 s, plus the release; the sung note at 4 s is not there
         assert!((buf.len() as f64 / 8000.0) < 2.5, "{}", buf.len());
         let rms = |x: &[f32]| (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt();

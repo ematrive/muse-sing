@@ -31,6 +31,7 @@ import {
   AMBIENCES,
   INSTRUMENTS,
   instrumentFor,
+  MAX_TRANSPOSE,
   METRONOME,
   SOUNDFONT_EVENT,
   api,
@@ -45,6 +46,7 @@ import {
   projectApi,
   singApi,
   type Ambience,
+  type GuideKind,
   type Instrument,
   type Room,
   type Lang,
@@ -332,14 +334,14 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   useEffect(() => {
     if (!opened || !project) return;
     let stale = false;
-    projectApi.roll(opened.score_path, project.tempo_factor).then(
+    projectApi.roll(opened.score_path, project.tempo_factor, project.marks ?? true, project.transpose ?? 0).then(
       (r) => !stale && setRoll(r),
       (e) => !stale && setError(errorText(e)),
     );
     return () => {
       stale = true;
     };
-  }, [opened, project?.tempo_factor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [opened, project?.tempo_factor, project?.marks, project?.transpose]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -443,7 +445,19 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const renderInstruments: Record<string, Instrument> = Object.fromEntries(instrumentParts.map((n) => [n, instrumentOf(n)]));
   const renderEdits: Record<string, PartEdits> = Object.fromEntries(sung.filter((p) => project?.edits[p.name]).map((p) => [p.name, project!.edits[p.name]]));
   const sig =
-    project && opened ? JSON.stringify([opened.score_path, project.lang, project.pitch, project.tempo_factor, accompOn, renderParts, renderEdits, renderInstruments, sfInstalled]) : "";
+    project && opened ? JSON.stringify([
+          opened.score_path,
+          project.lang,
+          project.pitch,
+          project.tempo_factor,
+          accompOn,
+          renderParts,
+          renderEdits,
+          renderInstruments,
+          sfInstalled,
+          project.marks ?? true,
+          project.transpose ?? 0,
+        ]) : "";
   sigRef.current = sig;
   const upToDate = !!rendered && rendered.sig === sig;
   const mix: MixPart[] = useMemo(() => {
@@ -553,6 +567,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
         accompaniment: accompOn,
         edits: renderEdits,
         instruments: renderInstruments,
+        marks: project.marks ?? true,
+        transpose: project.transpose ?? 0,
       });
       renderJobRef.current = job;
       setRenderJob(job);
@@ -653,7 +669,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     if (typeof dir !== "string") return;
     setExporting(true);
     try {
-      const files = await singApi.exportGuides(mix, dir, "mp3", guideDb, room, countIn);
+      const files = await singApi.exportGuides(mix, dir, "mp3", guideDb, room, countIn, project?.guides ?? "evidenza");
       setNotice({ text: `Basi di studio: ${files.length} file MP3 in ${baseName(dir)}`, path: files[0] });
     } catch (e) {
       setError(errorText(e));
@@ -759,7 +775,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
             </section>
           )}
 
-          <section className="card grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <section className="card grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <div>
               <label className="label">Lingua del testo</label>
               <select className="field" aria-label="Lingua del testo" value={project.lang} onChange={(e) => setProject((p) => ({ ...p, lang: e.target.value as Lang }))} disabled={rendering}>
@@ -790,6 +806,36 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                 {TEMPOS.map((t) => (
                   <option key={t} value={t}>
                     {t === 1 ? "100% (come scritto)" : `${Math.round(t * 100)}% (per studiare)`}
+                  </option>
+                ))}
+              </select>
+              <label
+                className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500"
+                title="Dinamiche e forcelle, respiri, corone, rit. e accel. scritti nella partitura. Togli la spunta per un'esecuzione piatta e a tempo costante."
+              >
+                <input
+                  type="checkbox"
+                  className="accent-violet-600"
+                  checked={project.marks ?? true}
+                  onChange={() => setProject((p) => ({ ...p, marks: !(p.marks ?? true) }))}
+                  disabled={rendering}
+                />
+                segni della partitura
+              </label>
+            </div>
+            <div>
+              <label className="label">Tonalità</label>
+              <select
+                className="field"
+                aria-label="Tonalità"
+                title="Sposta tutto (voci, strumenti, rullo) di qualche semitono, per adattarlo alla tua voce"
+                value={project.transpose ?? 0}
+                onChange={(e) => setProject((p) => ({ ...p, transpose: Number(e.target.value) }))}
+                disabled={rendering}
+              >
+                {Array.from({ length: 2 * MAX_TRANSPOSE + 1 }, (_, i) => MAX_TRANSPOSE - i).map((t) => (
+                  <option key={t} value={t}>
+                    {t === 0 ? "Come scritta" : `${t > 0 ? "+" : "−"}${Math.abs(t)} ${Math.abs(t) === 1 ? "semitono" : "semitoni"} ${t > 0 ? "sopra" : "sotto"}`}
                   </option>
                 ))}
               </select>
@@ -1134,11 +1180,21 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                     className="btn"
                     onClick={exportGuides}
                     disabled={exporting || sung.length < 2}
-                    title="Un MP3 per ogni voce, con quella voce in evidenza e le altre più basse"
+                    title="Un MP3 per ogni voce: con quella voce in evidenza, oppure senza (per cantarci sopra)"
                   >
                     <Headphones className="h-4 w-4" /> Basi di studio…
                   </button>
-                  <label className="flex items-center gap-2 text-xs text-zinc-500">
+                  <select
+                    className="field w-auto py-0.5 text-xs"
+                    aria-label="Tipo di basi"
+                    value={project.guides ?? "evidenza"}
+                    onChange={(e) => setProject((p) => ({ ...p, guides: e.target.value as GuideKind }))}
+                  >
+                    <option value="evidenza">voce in evidenza</option>
+                    <option value="senza">senza la propria voce</option>
+                    <option value="entrambe">entrambe</option>
+                  </select>
+                  <label className={`flex items-center gap-2 text-xs text-zinc-500 ${(project.guides ?? "evidenza") === "senza" ? "hidden" : ""}`}>
                     altre voci
                     <select className="field w-24 py-0.5" value={guideDb} onChange={(e) => setGuideDb(Number(e.target.value))}>
                       {[-6, -10, -15, -20].map((d) => (

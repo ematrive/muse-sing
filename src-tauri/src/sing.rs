@@ -91,6 +91,12 @@ pub struct RenderRequest {
     /// Instrument of each instrumental part (missing: guessed from the name).
     #[serde(default)]
     pub instruments: HashMap<String, crate::instruments::Instrument>,
+    /// Follow the dynamics, breaths, fermatas and rit./accel. written in the score.
+    #[serde(default = "yes")]
+    pub marks: bool,
+    /// Semitones up (or down), at most ±6.
+    #[serde(default)]
+    pub transpose: i32,
     /// The SoundFont, when installed (set by the app, not by the UI).
     #[serde(skip)]
     pub soundfont: Option<PathBuf>,
@@ -127,6 +133,10 @@ pub struct TrackInfo {
     /// The voicebank follows the timbre / consonant speed curves.
     pub gender: bool,
     pub velocity: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn one() -> f64 {
@@ -298,7 +308,8 @@ impl Sing {
         }
 
         let src = PathBuf::from(&req.path);
-        let sc = score::read_score(&src)?;
+        let mut sc = score::read_score(&src)?;
+        let breathed = crate::marks::prepare(&mut sc, req.marks, req.transpose);
         let names: Vec<String> = req.parts.iter().filter(|p| !p.played).map(|p| p.name.clone()).collect();
         crate::log!("velocità {:.0}%, accompagnamento {}", req.tempo_factor * 100.0, if req.accompaniment { "sì" } else { "no" });
         let no_hints = HashMap::new();
@@ -340,6 +351,11 @@ impl Sing {
                 if let Some(ph) = w.phonemes.as_deref().filter(|p| !p.trim().is_empty()) {
                     n.lyric = format!("{word}[{}]", ph.trim());
                 }
+            }
+        }
+        for (name, notes) in &mut parts {
+            if let Some(ids) = breathed.get(name) {
+                crate::marks::add_breaths(notes, ids, &axis);
             }
         }
         if parts.is_empty() && !req.accompaniment {
@@ -465,6 +481,11 @@ impl Sing {
             }
             let mut samples = section;
             apply_dynamics(&mut samples, edits, &axis);
+            // dynamics and hairpins of the score
+            if let Some(p) = sc.parts.iter().find(|p| &p.name == name) {
+                let curve: Vec<(f64, f32)> = crate::marks::gain_curve(p).into_iter().map(|(b, db)| (beats_secs(&axis, b), db)).collect();
+                apply_gain(&mut samples, &curve);
+            }
             tracks.push(Track { name: name.clone(), samples: Arc::new(samples) });
             if let Some(info) = main_info {
                 infos.insert(name.clone(), Arc::new(info));
@@ -493,7 +514,7 @@ impl Sing {
             tracks.push(Track { name: p.name.clone(), samples: Arc::new(samples) });
         }
         if req.accompaniment {
-            let samples = crate::accomp::render(&sc, &axis, sr, &req.instruments, sf.as_ref(), 0);
+            let samples = crate::accomp::render(&sc, &axis, sr, &req.instruments, sf.as_ref());
             if !samples.is_empty() {
                 crate::log!("accompagnamento: {:.1} s", samples.len() as f64 / sr as f64);
                 tracks.push(Track { name: crate::project::ACCOMPANIMENT.into(), samples: Arc::new(samples) });
@@ -548,6 +569,9 @@ fn word_info(ph: &ds::phonemize::Phonemized, notes: &[ds::phonemize::PNote], bas
     for (k, p) in ph.phones.iter().enumerate() {
         let g = &ph.groups[p.group];
         let head = &notes[g[0]];
+        if head.lyric == crate::marks::BREATH_LYRIC {
+            continue; // a breath added by the score marks, not a word
+        }
         if words.last().is_none_or(|w| w.id != head.id) {
             let last = &notes[*g.last().unwrap()];
             words.push(WordInfo {
@@ -561,6 +585,30 @@ fn word_info(ph: &ds::phonemize::Phonemized, notes: &[ds::phonemize::PNote], bas
         words.last_mut().unwrap().phones.push(PhoneInfo { symbol: p.symbol.clone(), start: sec(p.position), end: sec(p.end), base: sec(base[k]) });
     }
     words
+}
+
+/// Seconds of a score position on the render's time axis.
+fn beats_secs(axis: &ds::time::TimeAxis, b: score::Beats) -> f64 {
+    axis.tick_to_ms(*b.numer() as f64 / *b.denom() as f64 * ustx::TICKS as f64) / 1000.0
+}
+
+/// A volume curve (seconds, dB) applied in 10 ms steps.
+fn apply_gain(samples: &mut [f32], curve: &[(f64, f32)]) {
+    if curve.is_empty() {
+        return;
+    }
+    let sr = ds::render::SAMPLE_RATE as usize;
+    let block = sr / 100;
+    let gain_at = |i: usize| 10f32.powf(crate::marks::gain_at(curve, i as f64 / sr as f64) / 20.0);
+    let mut g0 = gain_at(0);
+    for (b, chunk) in samples.chunks_mut(block).enumerate() {
+        let g1 = gain_at((b + 1) * block);
+        let n = chunk.len() as f32;
+        for (k, x) in chunk.iter_mut().enumerate() {
+            *x *= g0 + (g1 - g0) * k as f32 / n;
+        }
+        g0 = g1;
+    }
 }
 
 /// Volume curve of the edits (dB), applied to a rendered part in 10 ms steps.

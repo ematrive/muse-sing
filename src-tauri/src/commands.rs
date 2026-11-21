@@ -851,9 +851,11 @@ pub struct Roll {
 
 /// Every part's notes in seconds (repeats unrolled, at `tempo_factor`), for the score roll.
 #[tauri::command]
-pub async fn score_roll(score_path: String, tempo_factor: f64) -> Result<Roll> {
+pub async fn score_roll(score_path: String, tempo_factor: f64, marks: Option<bool>, transpose: Option<i32>) -> Result<Roll> {
     blocking(move || {
-        let score = read_score(Path::new(&score_path))?;
+        let mut score = read_score(Path::new(&score_path))?;
+        // the same tempo, breaths and pitches as the render, so the cursor follows the audio
+        crate::marks::prepare(&mut score, marks.unwrap_or(true), transpose.unwrap_or(0));
         let ticks = |b: crate::score::Beats| *b.numer() as f64 / *b.denom() as f64 * crate::ustx::TICKS as f64;
         let tempos: Vec<(i64, f64)> =
             score.tempos.iter().map(|(b, q)| (ticks(*b).round() as i64, q * 60.0 * tempo_factor.clamp(0.25, 2.0))).collect();
@@ -913,35 +915,46 @@ pub async fn sing_export_guides(
     ambience: Option<Ambience>,
     reverb: Option<f32>,
     count_in: Option<bool>,
+    kind: Option<String>,
 ) -> Result<Vec<String>> {
     let sing = state.0.clone();
     blocking(move || {
         let title = file_safe(&sing.title());
         let names: Vec<String> = sing.with_tracks(|t| t.iter().map(|(n, _)| n.clone()).collect())?;
         let mut written = vec![];
+        // "evidenza": the part louder than the others; "senza": the others without it
+        let kinds: &[&str] = match kind.as_deref() {
+            Some("senza") => &["senza"],
+            Some("entrambe") => &["evidenza", "senza"],
+            _ => &["evidenza"],
+        };
         for name in names.iter().filter(|n| n.as_str() != project::ACCOMPANIMENT && n.as_str() != project::METRONOME) {
-            let parts: Vec<MixPart> = mix
-                .iter()
-                .map(|p| {
-                    let mut p = p.clone();
-                    p.solo = false;
-                    if &p.name == name {
-                        p.mute = false;
-                    } else if p.name != project::ACCOMPANIMENT && p.name != project::METRONOME {
-                        p.volume_db += others_db;
-                    }
-                    p
-                })
-                .collect();
-            let (mut l, mut r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
-            if count_in == Some(true) {
-                let pre = sing.count_in(0.0);
-                l.splice(0..0, pre.iter().copied());
-                r.splice(0..0, pre.iter().copied());
+            for &k in kinds {
+                let without = k == "senza";
+                let parts: Vec<MixPart> = mix
+                    .iter()
+                    .map(|p| {
+                        let mut p = p.clone();
+                        p.solo = false;
+                        if &p.name == name {
+                            p.mute = without;
+                        } else if !without && p.name != project::ACCOMPANIMENT && p.name != project::METRONOME {
+                            p.volume_db += others_db;
+                        }
+                        p
+                    })
+                    .collect();
+                let (mut l, mut r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
+                if count_in == Some(true) {
+                    let pre = sing.count_in(0.0);
+                    l.splice(0..0, pre.iter().copied());
+                    r.splice(0..0, pre.iter().copied());
+                }
+                let label = if without { format!("senza {name}") } else { name.clone() };
+                let path = Path::new(&dir).join(format!("{title} - {}.{ext}", file_safe(&label)));
+                mix::export(&path, &l, &r, crate::ds::render::SAMPLE_RATE, &format!("{} ({label})", sing.title()))?;
+                written.push(path.to_string_lossy().into_owned());
             }
-            let path = Path::new(&dir).join(format!("{title} - {}.{ext}", file_safe(name)));
-            mix::export(&path, &l, &r, crate::ds::render::SAMPLE_RATE, &format!("{} ({name})", sing.title()))?;
-            written.push(path.to_string_lossy().into_owned());
         }
         Ok(written)
     })

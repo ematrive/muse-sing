@@ -40,6 +40,8 @@ fn renders_mixes_and_reuses_the_cache() {
         accompaniment: false,
         edits: Default::default(),
         instruments: Default::default(),
+        marks: true,
+        transpose: 0,
         soundfont: None,
     };
     let t = std::time::Instant::now();
@@ -122,6 +124,8 @@ fn accompaniment_and_slower_tempo() {
             accompaniment: true,
             edits: Default::default(),
             instruments: Default::default(),
+            marks: true,
+            transpose: 0,
             soundfont: None,
         };
         let job = sing.begin();
@@ -177,6 +181,8 @@ fn edits_render_only_what_changed() {
             accompaniment: false,
             edits: std::collections::HashMap::from([(part.to_string(), edits)]),
             instruments: Default::default(),
+            marks: true,
+            transpose: 0,
             soundfont: None,
         };
         let job = sing.begin();
@@ -276,6 +282,8 @@ fn edits_render_only_what_changed() {
         accompaniment: false,
         edits: std::collections::HashMap::from([(part.to_string(), e)]),
         instruments: Default::default(),
+        marks: true,
+        transpose: 0,
         soundfont: None,
     };
     let job = sing.begin();

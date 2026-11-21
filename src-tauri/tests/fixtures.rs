@@ -201,3 +201,39 @@ fn musicxml_matches_mscz() {
         }
     }
 }
+
+/// Breaths and fermatas read the same from MuseScore and MusicXML, and shorten the same notes.
+#[test]
+fn breaths_and_fermatas() {
+    let Some(dir) = fixtures() else { return };
+    // (score, breaths, fermatas) written in the score, summed over the staves
+    for (name, breaths, fermatas) in [("santo", 8, 2), ("sonnet", 12, 20)] {
+        let a = read_mscz(&dir.join(format!("{name}.mscz"))).unwrap();
+        let b = muse_sing_lib::score::read_score(&dir.join(format!("{name}.musicxml"))).unwrap();
+        let count = |s: &muse_sing_lib::score::Score| {
+            (s.parts.iter().map(|p| p.marks.breaths.len()).sum::<usize>(), s.parts.iter().map(|p| p.marks.fermatas.len()).sum::<usize>())
+        };
+        assert_eq!(count(&a), (breaths, fermatas), "{name}: written marks");
+        assert_eq!(count(&b), (breaths, fermatas), "{name}: written marks (MusicXML)");
+        for (x, y) in a.parts.iter().zip(&b.parts) {
+            assert_eq!(x.marks.breaths, y.marks.breaths, "{name} / {}: breaths", x.name);
+            assert_eq!(x.marks.fermatas, y.marks.fermatas, "{name} / {}: fermatas", x.name);
+        }
+        let (mut a, mut b) = (a, b);
+        let ta = a.tempos.clone();
+        let (ba, bb) = (muse_sing_lib::marks::prepare(&mut a, true, 0), muse_sing_lib::marks::prepare(&mut b, true, 0));
+        let sorted = |m: &muse_sing_lib::marks::Breathed| {
+            let mut v: Vec<(String, String)> = m.iter().flat_map(|(p, ids)| ids.iter().map(move |i| (p.clone(), i.clone()))).collect();
+            v.sort();
+            v
+        };
+        eprintln!("{name}: shortened {:?}", sorted(&ba));
+        assert_eq!(sorted(&ba), sorted(&bb), "{name}: shortened notes");
+        assert!(!ba.is_empty(), "{name}: some breaths shorten a note");
+        assert_eq!(a.tempos.len(), b.tempos.len(), "{name}: tempos with fermatas {:?} / {:?}", a.tempos, b.tempos);
+        for (x, y) in a.tempos.iter().zip(&b.tempos) {
+            assert!(x.0 == y.0 && (x.1 - y.1).abs() < 1e-4, "{name}: tempo {x:?} vs {y:?}");
+        }
+        assert!(a.tempos.len() > ta.len(), "{name}: fermatas slow down");
+    }
+}

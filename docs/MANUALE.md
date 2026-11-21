@@ -61,6 +61,14 @@ Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo rico
   - **naturale:** il cantante decide come attaccare e legare le note, con un po' di vibrato. Suona più umano;
   - **esatta:** la voce sta ferma sulle note scritte. Utile per controllare l'intonazione della propria parte.
 - **Velocità:** 100% è il tempo scritto; 90%, 80%, 70% o 60% rallentano tutto il brano (voci e accompagnamento) per studiare i passaggi difficili. Cambiare la velocità richiede di generare di nuovo; ogni velocità resta in memoria.
+- **Segni della partitura** (sotto Velocità, acceso di solito): Muse Sing esegue quello che è scritto oltre alle note:
+  - **dinamiche e forcelle** (*pp*, *p*, *mf*, *f*… e crescendo/diminuendo) alzano e abbassano il volume di ogni voce;
+  - **respiri** (la virgola): la nota prima si accorcia un poco e il cantante prende fiato;
+  - **corone**: il tempo rallenta su quella nota, per tutte le voci insieme;
+  - **rit., rall., allarg., accel.** e **a tempo**: il tempo cambia gradualmente, al massimo per due battute.
+
+  Togli la spunta per un'esecuzione piatta, a volume e tempo costanti. Anche il rullo segue i segni, così il cursore resta sulla musica.
+- **Tonalità:** sposta tutto il brano (voci, strumenti, conteggio e rullo) fino a 6 semitoni sopra o sotto, per adattarlo alla tua voce. Come la velocità, richiede di generare di nuovo.
 - **Ambiente:** il riverbero di una stanza, di una chiesa o di una cattedrale, sentito in ascolto e messo nei file esportati e nelle basi di studio. «Nessuno» lascia la voce secca, com'era prima. Sotto, lo slider **Riverbero** regola quanto se ne sente: 50% è il valore normale, 0% lo toglie, 100% lo raddoppia (doppio clic: torna al 50%). Si può cambiare in qualsiasi momento senza generare di nuovo.
 - **Voci:** spunta quelle da cantare e scegli il **cantante** di ognuna. Se il cantante ha più colori di voce (Tiger ne ha diversi), accanto compare la scelta del colore. Muse Sing ricorda il cantante di ogni voce (Soprano, Tenore…) da un brano all'altro.
 - **Coristi:** con 2 o 3 coristi la voce è cantata da una piccola sezione invece che da un solista: ogni corista ha un altro colore di voce e canta in modo leggermente diverso, come in un coro vero. La generazione dura 2 o 3 volte tanto (le voci già generate si riusano).
@@ -107,6 +115,11 @@ Nota: l'intonazione naturale la sceglie il modello del cantante, che ogni volta 
 
 - **Esporta…:** il brano con il mix che senti, in MP3 (per il telefono), FLAC (senza perdita di qualità) o WAV.
 - **Basi di studio…:** scegli una cartella e Muse Sing crea un MP3 per ogni voce (*Santo - Soprano.mp3*, *Santo - Contralto.mp3*…), con quella voce in primo piano e le altre più basse (di quanto, lo scegli accanto: −10 dB è un buon inizio). L'accompagnamento resta come nel mix. Con **conteggio** acceso, ogni base comincia con la battuta di conteggio. Sono le classiche basi da mandare al coro.
+
+  Nel menu accanto scegli il tipo di base:
+  - **voce in evidenza:** come sopra;
+  - **senza la propria voce:** tutte le altre voci normali e la propria muta, per cantarci sopra la tua parte (*Santo - senza Soprano.mp3*);
+  - **entrambe:** i due file per ogni voce.
 
 ### Ritornelli e salti
 

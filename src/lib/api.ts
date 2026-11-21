@@ -114,7 +114,15 @@ export type Project = {
   instruments: Record<string, Instrument>;
   metronome: AccompCfg;
   count_in: boolean;
+  /** follow dynamics, breaths, fermatas, rit./accel. of the score */
+  marks: boolean;
+  /** semitones, ±MAX_TRANSPOSE */
+  transpose: number;
+  guides: GuideKind;
 };
+export const MAX_TRANSPOSE = 6;
+/** Study tracks: the part louder, the others without it, or both. */
+export type GuideKind = "evidenza" | "senza" | "entrambe";
 /** Curve points (tick, value): ticks of the written score, every CURVE_STEP; missing = default. */
 export type Curve = [number, number][];
 export const CURVE_STEP = 5;
@@ -157,7 +165,8 @@ export const projectApi = {
   recent: () => invoke<RecentProject[]>("project_recent"),
   /** Files the Finder asked to open (double click) and not yet opened. */
   takeOpened: () => invoke<string[]>("take_opened_files"),
-  roll: (scorePath: string, tempoFactor: number) => invoke<Roll>("score_roll", { scorePath, tempoFactor }),
+  roll: (scorePath: string, tempoFactor: number, marks: boolean, transpose: number) =>
+    invoke<Roll>("score_roll", { scorePath, tempoFactor, marks, transpose }),
 };
 
 // --- sung audio (Muse Sing's DiffSinger engine) --------------------------------------------------
@@ -173,6 +182,8 @@ export type RenderRequest = {
   accompaniment: boolean;
   edits: Record<string, PartEdits>;
   instruments: Record<string, Instrument>;
+  marks: boolean;
+  transpose: number;
 };
 export type PhoneInfo = { symbol: string; start: number; end: number; base: number };
 export type WordInfo = { id: string; word: string; start: number; end: number; phones: PhoneInfo[] };
@@ -195,8 +206,8 @@ export const singApi = {
   stop: () => invoke<void>("sing_stop"),
   export: (mix: MixPart[], path: string, room: Room) => invoke<string>("sing_export", { mix, path, ...room }),
   /** One file per sung part, that part in front and the others lowered by `othersDb`. */
-  exportGuides: (mix: MixPart[], dir: string, ext: string, othersDb: number, room: Room, countIn: boolean) =>
-    invoke<string[]>("sing_export_guides", { mix, dir, ext, othersDb, ...room, countIn }),
+  exportGuides: (mix: MixPart[], dir: string, ext: string, othersDb: number, room: Room, countIn: boolean, kind: GuideKind) =>
+    invoke<string[]>("sing_export_guides", { mix, dir, ext, othersDb, ...room, countIn, kind }),
 };
 
 export const LANGS: Record<Lang, string> = { it: "Italiano", en: "English", la: "Latino (ecclesiastico)" };

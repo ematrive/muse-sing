@@ -10,6 +10,9 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 - **Strumenti veri:** l'accompagnamento suona tutte le note delle parti strumentali (accordi e voci interne, non più solo la melodia) e, scaricando gli strumenti (31 MB), con organo a canne, armonium, pianoforte, archi, flauto, chitarra o arpa, scelti per ogni parte.
 - **Voce suonata:** ogni voce può essere suonata al pianoforte invece che cantata, per imparare le note.
 - **Metronomo e conteggio:** colpo su ogni battito (anche nei 6/8 e nei cambi di metro) e, a scelta, una battuta di conteggio con l'accordo di partenza prima dell'ascolto e delle basi di studio.
+- **Segni della partitura:** dinamiche e forcelle cambiano il volume delle voci, i respiri accorciano la nota e fanno prendere fiato al cantante, corone e rit./rall./accel. rallentano o accelerano il tempo. Si possono spegnere con una spunta.
+- **Tonalità:** tutto il brano (voci, strumenti, rullo) spostato fino a 6 semitoni sopra o sotto.
+- **Basi senza la propria voce:** le basi di studio possono avere tutte le voci tranne la propria, per cantarci sopra (o entrambi i tipi).
 - **Latino:** nuova lingua «Latino (ecclesiastico)» per i canti sacri, con la pronuncia all'italiana (*excelsis*, *agnus*, *gratia*, *caeli*…). Viene riconosciuta da sola dalle parole del testo e si canta con i cantanti italiani.
 - **Partiture MusicXML:** oltre ai `.mscz` si possono aprire file `.musicxml`, `.mxl` e `.xml`, esportati da Finale, Sibelius, Dorico, MuseScore o da programmi che leggono i PDF.
 - **Battute nel rullo:** il righello del rullo e dei Ritocchi mostra stanghette e numeri di battuta come nella partitura, con il metro dove cambia. Nei Ritocchi la parola indica la battuta stampata.

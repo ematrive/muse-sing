@@ -9,7 +9,7 @@ use num_rational::Ratio;
 use roxmltree::{Document, Node};
 
 use crate::error::{Error, Result};
-use crate::score::{assemble, Beats, Lyric, MeasureData, NoteData, Score, StaffData, Structure, Syllabic, ToneData};
+use crate::score::{assemble, dynamic_db, Beats, Hairpin, Lyric, Marks, MeasureData, NoteData, Score, StaffData, Structure, Syllabic, TempoWord, ToneData};
 
 fn child<'a, 'i>(n: Node<'a, 'i>, tag: &str) -> Option<Node<'a, 'i>> {
     n.children().find(|c| c.has_tag_name(tag))
@@ -226,6 +226,7 @@ fn read_part(
         let mut st = Structure::default();
         let mut notes: Vec<Vec<NoteData>> = (0..n_staves).map(|_| vec![]).collect();
         let mut tones: Vec<Vec<ToneData>> = (0..n_staves).map(|_| vec![]).collect();
+        let mut marks: Vec<Marks> = (0..n_staves).map(|_| Marks::default()).collect();
         let mut tempos: Vec<(Beats, f64)> = vec![];
         let mut time_sig = None;
         // a pickup or a split measure (implicit) is left out of the count
@@ -263,6 +264,30 @@ fn read_part(
                         .or_else(|| types.iter().find(|t| t.has_tag_name("metronome")).and_then(|m| metronome(*m)));
                     if let Some(t) = tempo.filter(|t| *t > 0.0) {
                         tempos.push((pos, t));
+                    }
+                    // performance markings, on the staff the direction belongs to
+                    let staff = child_text(el, "staff").and_then(|s| s.parse::<usize>().ok()).unwrap_or(1).clamp(1, n_staves) - 1;
+                    let mk = &mut marks[staff];
+                    for t in &types {
+                        if t.has_tag_name("dynamics") {
+                            if let Some(db) = t.children().filter(|c| c.is_element()).find_map(|c| dynamic_db(c.tag_name().name())) {
+                                mk.dynamics.push((pos, db));
+                            }
+                        } else if t.has_tag_name("wedge") {
+                            match t.attribute("type") {
+                                Some("crescendo") => mk.hairpins.push((pos, Hairpin::Cresc)),
+                                Some("diminuendo") => mk.hairpins.push((pos, Hairpin::Dim)),
+                                Some("stop") => mk.hairpins.push((pos, Hairpin::End)),
+                                _ => {}
+                            }
+                        }
+                    }
+                    if tempo.is_none()
+                        && let Some(w) = TempoWord::from_text(&words)
+                    {
+                        mk.tempo.push((pos, w));
+                    } else if tempo.is_some() && TempoWord::from_text(&words) == Some(TempoWord::ATempo) {
+                        mk.tempo.push((pos, TempoWord::ATempo));
                     }
                     let attr = |k: &str| sound.and_then(|s| s.attribute(k)).map(str::to_string);
                     if let Some(v) = attr("segno") {
@@ -348,6 +373,14 @@ fn read_part(
                     if !cue && let Some(pitch) = pitch {
                         tones[staff].push(ToneData { offset: start, dur, pitch, tie_prev });
                     }
+                    if !cue && let Some(nt) = child(el, "notations") {
+                        if child(nt, "fermata").is_some() {
+                            marks[staff].fermatas.push((start, dur));
+                        }
+                        if child(nt, "articulations").is_some_and(|a| child(a, "breath-mark").is_some()) {
+                            marks[staff].breaths.push(start + dur);
+                        }
+                    }
                     if first && !cue && let Some(pitch) = pitch {
                         match (is_chord, last[staff]) {
                             // another note of the same chord: the top one is sung, as in MuseScore
@@ -375,8 +408,17 @@ fn read_part(
         }
         let nominal: Beats = Ratio::new(sig.0 as i64 * 4, sig.1.max(1) as i64);
         let len = if max_pos > zero { max_pos } else { nominal };
-        for (s, (staff_notes, staff_tones)) in notes.into_iter().zip(tones).enumerate() {
-            out[s].push(MeasureData { len, notes: staff_notes, tones: staff_tones, tempos: tempos.clone(), structure: st.clone(), time_sig, number: number.clone() });
+        for (s, ((staff_notes, staff_tones), staff_marks)) in notes.into_iter().zip(tones).zip(marks).enumerate() {
+            out[s].push(MeasureData {
+                len,
+                notes: staff_notes,
+                tones: staff_tones,
+                tempos: tempos.clone(),
+                structure: st.clone(),
+                time_sig,
+                number: number.clone(),
+                marks: staff_marks,
+            });
         }
     }
     if open_ending.is_some() {
@@ -459,6 +501,35 @@ mod tests {
             <part id="P1">{}</part></score-partwise>"#,
             measures.concat()
         )
+    }
+
+    #[test]
+    fn performance_marks() {
+        let dir = |t: &str| format!("<direction><direction-type>{t}</direction-type></direction>");
+        let body = [
+            r#"<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>"#.to_string(),
+            dir("<dynamics><p/></dynamics>"),
+            dir(r#"<wedge type="crescendo"/>"#),
+            note("C", 4, 1, ""),
+            note("D", 4, 1, ""),
+            dir(r#"<wedge type="stop"/>"#),
+            dir("<dynamics><f/></dynamics>"),
+            dir("<words>poco rit.</words>"),
+            note("E", 4, 1, "<notations><articulations><breath-mark/></articulations></notations>"),
+            note("F", 4, 1, "<notations><fermata/></notations>"),
+        ]
+        .concat();
+        let xml = format!(
+            r#"<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>S</part-name></score-part></part-list><part id="P1"><measure number="1">{body}</measure></part></score-partwise>"#
+        );
+        let s = parse_musicxml(&xml).unwrap();
+        let m = &s.parts[0].marks;
+        let b = |n: i64| Ratio::from_integer(n);
+        assert_eq!(m.dynamics, vec![(b(0), -8.0), (b(2), 3.0)]);
+        assert_eq!(m.hairpins, vec![(b(0), Hairpin::Cresc), (b(2), Hairpin::End)]);
+        assert_eq!(m.tempo, vec![(b(2), TempoWord::Slower)]);
+        assert_eq!(m.breaths, vec![b(3)]);
+        assert_eq!(m.fermatas, vec![(b(3), b(1))]);
     }
 
     #[test]

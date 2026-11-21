@@ -69,8 +69,7 @@ export function CheckPanel({
   mine: string | null;
   ownVoice: OwnVoice;
   onOwnVoice: (v: OwnVoice) => void;
-  /** null: idle; true: count-in; false: singing */
-  checking: boolean | null;
+  checking: "counting" | "singing" | "analyzing" | null;
   level: number;
   result: CheckDone | null;
   summary: Summary | null;
@@ -96,6 +95,10 @@ export function CheckPanel({
               <button className="btn-primary" onClick={onStart} disabled={disabled}>
                 <Mic2 className="h-4 w-4" /> Canta
               </button>
+            ) : checking === "analyzing" ? (
+              <span className="btn opacity-70">
+                <Loader2 className="h-4 w-4 animate-spin" /> Analizzo…
+              </span>
             ) : (
               <button className="btn" onClick={onStop}>
                 <Square className="h-4 w-4" /> Ferma
@@ -112,9 +115,9 @@ export function CheckPanel({
                 <option value="normale">normale</option>
               </select>
             </label>
-            {checking !== null && (
+            {(checking === "counting" || checking === "singing") && (
               <span className="flex items-center gap-2 text-xs text-zinc-500">
-                {checking ? (
+                {checking === "counting" ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> conteggio…
                   </>

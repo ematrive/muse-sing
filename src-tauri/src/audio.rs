@@ -457,6 +457,14 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
 }
 
+/// Silences a job's sounds when it ends, however it ends (an error must not leave them playing).
+struct DropVoices<'a>(&'a Mutex<Mixer>, u64);
+impl Drop for DropVoices<'_> {
+    fn drop(&mut self) {
+        lock(self.0).voices.retain(|v| v.id != self.1);
+    }
+}
+
 /// Clears the recording flag when the take ends, however it ends (if it is still this take's).
 struct StopRecording<'a>(&'a Mutex<Capture>, u64);
 impl Drop for StopRecording<'_> {
@@ -927,6 +935,7 @@ impl Engine {
         }
         let _rec = StopRecording(&self.capture, id);
         let start = self.schedule_stereo(id, l, Some(r), 0, false, 1.0, false, rate);
+        let _voices = DropVoices(&self.mixer, id);
         let stopped = loop {
             if !self.is_current(id) {
                 if self.job.load(Ordering::Relaxed) != 0 {
@@ -959,7 +968,13 @@ impl Engine {
             (Some(o), Some(i)) => align_input_frame(start, o, rate, i, in_rate),
             _ => None,
         };
-        let click = choose_click_frame(by_ts, mark, in_rate).ok_or_else(|| Error::Other("registrazione non allineabile: riprova".into()))?;
+        let Some(click) = choose_click_frame(by_ts, mark, in_rate) else {
+            // stopped before anything was heard: nothing to judge
+            if stopped {
+                return Ok(None);
+            }
+            return Err(Error::Other("registrazione non allineabile: riprova".into()));
+        };
         let to = click + (heard * in_rate as f64) as u64;
         if !stopped {
             // wait for the input to deliver the last frames

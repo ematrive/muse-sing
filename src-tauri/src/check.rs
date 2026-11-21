@@ -46,8 +46,20 @@ const ALMOST: f32 = 50.0;
 const ATTACK: f64 = 0.08;
 /// Fewer voiced estimates than this in the judged part: the note can't be judged.
 const MIN_FRAMES: usize = 3;
-/// Search range for the delay between the recording and the music.
+/// Search range for the delay between the recording and the music; never more than this share of
+/// a typical note, or a phrase sung one note late would look in tune.
 const MAX_LAG: f64 = 0.25;
+const MAX_LAG_NOTE: f64 = 0.4;
+/// A take that ends this soon after the count-in has nothing to judge.
+const MIN_SUNG: f64 = 0.5;
+
+/// The stretch actually sung (score seconds): from `from` until the recording stopped, at most
+/// `to`. The recording started `lead` seconds (the count-in) before `from` and lasts `heard`.
+/// None when it stopped during the count-in or right after.
+pub fn sung_range(from: f64, to: f64, lead: f64, heard: f64) -> Option<(f64, f64)> {
+    let end = (from - lead + heard).min(to);
+    (end - from >= MIN_SUNG).then_some((from, end))
+}
 
 /// Cents from `target`, folded to the nearest octave (−600..600).
 fn folded_cents(midi: f32, target: i32) -> f32 {
@@ -114,7 +126,10 @@ pub fn best_lag(notes: &[RefNote], track: &Track, offset: f64, range: (f64, f64)
             })
             .sum()
     };
-    let steps = (MAX_LAG / HOP).round() as i64;
+    let mut lens: Vec<f64> = inside.iter().map(|n| n.end - n.start).collect();
+    lens.sort_by(|a, b| a.total_cmp(b));
+    let typical = lens.get(lens.len() / 2).copied().unwrap_or(1.0);
+    let steps = (MAX_LAG.min(MAX_LAG_NOTE * typical) / HOP).round() as i64;
     let zero = score(0.0);
     let (mut best, mut best_score) = (0.0, zero);
     for k in -steps..=steps {
@@ -207,6 +222,31 @@ mod tests {
         for delay in [0.1, 0.2, -0.1, -0.2] {
             assert_eq!(verdicts(&cents, delay, false), expected, "delay {delay}");
         }
+    }
+
+    #[test]
+    fn a_phrase_sung_one_note_late_is_not_in_tune() {
+        // quick notes of 0.25 s, each sung with the pitch of the one before
+        let ns: Vec<RefNote> = [60, 62, 64, 65, 67, 69, 71, 72, 71, 69, 67, 65]
+            .iter()
+            .enumerate()
+            .map(|(i, &p)| RefNote { id: format!("n{i}"), start: 0.5 + i as f64 * 0.25, end: 0.75 + i as f64 * 0.25, pitch: p })
+            .collect();
+        let late: Vec<RefNote> = ns.iter().enumerate().map(|(i, n)| RefNote { pitch: if i == 0 { 55 } else { ns[i - 1].pitch }, ..n.clone() }).collect();
+        let track = analyze(&sing(&late, &[Some(0.0); 12], 0.0, false), SR);
+        let lag = best_lag(&ns, &track, 0.0, (0.0, 10.0));
+        let got = compare(&ns, &track, -lag, (0.0, 10.0));
+        let in_tune = got.iter().filter(|c| c.verdict == Verdict::InTune).count();
+        assert!(in_tune <= 2, "lag {lag}: {in_tune} of 12 in tune");
+    }
+
+    #[test]
+    fn stretch_sung() {
+        // count-in of 2 s before 10 s; stopped after 5 s, during the count-in, past the end
+        assert_eq!(sung_range(10.0, 30.0, 2.0, 5.0), Some((10.0, 13.0)));
+        assert_eq!(sung_range(10.0, 30.0, 2.0, 1.5), None);
+        assert_eq!(sung_range(10.0, 30.0, 2.0, 2.2), None);
+        assert_eq!(sung_range(10.0, 12.0, 2.0, 9.0), Some((10.0, 12.0)));
     }
 
     #[test]

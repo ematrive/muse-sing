@@ -459,8 +459,7 @@ fn checks_a_rendered_voice() {
     };
     for (cents, expected) in [(0.0f32, Verdict::InTune), (40.0, Verdict::Almost)] {
         if cents != 0.0 {
-            let mut e = muse_sing_lib::edits::PartEdits::default();
-            e.pitch = muse_sing_lib::edits::Curve((0..40_000).map(|k| (k * 5, cents)).collect());
+            let e = muse_sing_lib::edits::PartEdits { pitch: muse_sing_lib::edits::Curve((0..40_000).map(|k| (k * 5, cents)).collect()), ..Default::default() };
             req.edits.insert("Soprano".into(), e);
         }
         let job = sing.begin();

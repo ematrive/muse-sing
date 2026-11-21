@@ -162,6 +162,16 @@ pub(crate) mod tests {
             .collect()
     }
 
+    /// `cargo test --release pitch::tests::speed -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn speed() {
+        let x = voice(60.0, 240.0, 48_000, 20.0);
+        let t = std::time::Instant::now();
+        let tr = analyze(&x, 48_000);
+        eprintln!("4 minutes at 48 kHz in {:.2} s ({} frames)", t.elapsed().as_secs_f64(), tr.midi.len());
+    }
+
     #[test]
     fn finds_the_pitch_of_voices_without_octave_errors() {
         for sr in [44_100, 48_000, 16_000] {

@@ -665,7 +665,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
       const [a, b] = loop ?? [cursor, null];
       const job = await singApi.check(checkMix(), mineSung, a, b, room);
       checkJobRef.current = job;
-      setChecking({ job, t: a, counting: true, level: 0 });
+      setChecking({ job, t: a, counting: true, analyzing: false, level: 0 });
     } catch (e) {
       setError(errorText(e));
     }
@@ -1334,7 +1334,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
               mine={mineSung}
               ownVoice={ownVoice}
               onOwnVoice={setOwnVoice}
-              checking={checking ? checking.counting : null}
+              checking={checking ? (checking.analyzing ? "analyzing" : checking.counting ? "counting" : "singing") : null}
               level={checking?.level ?? 0}
               result={checkResult}
               summary={checkSummary}

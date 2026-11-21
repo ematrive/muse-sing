@@ -196,7 +196,7 @@ export type SingDone = { job: number; error: string | null; cancelled: boolean; 
 export type PlayProgress = { job: number; t: number; total: number };
 export type PlayDone = { job: number; error: string | null };
 /** «Canta e controlla»: `sing-check` while singing, `sing-check-done` at the end. */
-export type CheckProgress = { job: number; t: number; counting: boolean; level: number };
+export type CheckProgress = { job: number; t: number; counting: boolean; analyzing: boolean; level: number };
 export type Verdict = "in_tune" | "almost" | "off" | "missed" | "not_judged";
 export type NoteCheck = { id: string; verdict: Verdict; cents: number | null };
 export type CheckDone = {

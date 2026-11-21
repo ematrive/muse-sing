@@ -666,6 +666,8 @@ pub struct CheckProgress {
     /// Score seconds (stays at the start during the count-in).
     pub t: f64,
     pub counting: bool,
+    /// The take is over and the voice being analysed.
+    pub analyzing: bool,
     /// Microphone peak, 0..1.
     pub level: f32,
 }
@@ -726,7 +728,7 @@ pub async fn sing_check(
     *state.1.lock().unwrap_or_else(|e| e.into_inner()) = job;
     std::thread::spawn(move || {
         let progress = |t: f64, _total: f64, level: f32| {
-            let _ = app.emit("sing-check", CheckProgress { job, t: (from - lead + t).max(from), counting: t < lead, level });
+            let _ = app.emit("sing-check", CheckProgress { job, t: (from - lead + t).max(from), counting: t < lead, analyzing: false, level });
         };
         let res = engine.play_and_record(job, &l, &r, sr, &progress);
         engine.end_job(job);
@@ -734,10 +736,15 @@ pub async fn sing_check(
         match res {
             Ok(None) => done.error = Some(String::new()), // replaced by something else: nothing to show
             Err(e) => done.error = Some(e.to_string()),
-            Ok(Some(rec)) => {
+            Ok(Some(rec)) => 'judge: {
                 let offset = from - lead;
                 let heard = rec.samples.len() as f64 / rec.sample_rate as f64;
-                let range = (from, (offset + heard).min(to));
+                // stopped during the count-in: as if cancelled
+                let Some(range) = crate::check::sung_range(from, to, lead, heard) else {
+                    done.error = Some(String::new());
+                    break 'judge;
+                };
+                let _ = app.emit("sing-check", CheckProgress { job, t: range.1, counting: false, analyzing: true, level: 0.0 });
                 let track = crate::pitch::analyze(&rec.samples, rec.sample_rate);
                 let lag = crate::check::best_lag(&notes, &track, offset, range);
                 let at = offset - lag;
@@ -789,7 +796,8 @@ pub async fn sing_check_replay(
             l[at] += x * gain;
             r[at] += x * gain;
         }
-        let (i, j) = ((take.range.0 * sr) as usize, ((take.range.1 * sr) as usize).min(l.len()));
+        let j = ((take.range.1 * sr) as usize).min(l.len());
+        let i = ((take.range.0 * sr) as usize).min(j);
         (l[i..j].to_vec(), r[i..j].to_vec(), take.range.0, total)
     };
     let job = blocking({

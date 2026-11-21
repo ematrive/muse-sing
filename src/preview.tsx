@@ -249,6 +249,13 @@ mockIPC(
       const me = sing.play(Number(a.fromSec) || 0);
       if (cmd === "sing_check") {
         const from = Number(a.fromSec) || 0;
+        const t0 = performance.now();
+        const timer = window.setInterval(() => {
+          const t = (performance.now() - t0) / 1000;
+          const analyzing = t > 1.6;
+          emit("sing-check", { job: me, t: from + Math.max(0, t - 0.8), counting: t < 0.8, analyzing, level: analyzing ? 0 : 0.2 + 0.4 * Math.random() });
+          if (analyzing) clearInterval(timer);
+        }, 50);
         const part = roll(rollTempo).parts.find((p) => p.name === a.part)!;
         window.setTimeout(() => {
           sing.stop();

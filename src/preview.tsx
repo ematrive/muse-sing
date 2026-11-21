@@ -201,6 +201,7 @@ mockIPC(
       if (!a) throw "Anteprima senza partiture: mancano src/preview-santo.json e src/preview-sonnet.json";
       return a;
     }
+    if (cmd === "install_tiger") return "/Users/utente/Library/Application Support/app.musesing.desktop/Singers/Tiger";
     if (cmd === "list_singers")
       return {
         singers: [

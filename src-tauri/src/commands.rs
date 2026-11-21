@@ -180,6 +180,48 @@ fn own_singers_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     Some(d)
 }
 
+/// Event with the progress of `install_tiger` (`tiger::Progress`).
+pub const TIGER_EVENT: &str = "tiger-progress";
+
+static TIGER_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Downloads TIGER DS from its official release and installs it in Muse Sing's Singers folder;
+/// returns the new folder.
+#[tauri::command]
+pub async fn install_tiger(app: tauri::AppHandle) -> Result<String> {
+    use std::sync::atomic::Ordering;
+    if TIGER_BUSY.swap(true, Ordering::SeqCst) {
+        return Err(Error::Other("Tiger si sta già scaricando".into()));
+    }
+    let res = async {
+        let singers = own_singers_dir(&app).ok_or_else(|| Error::Other("cartella dei cantanti non disponibile".into()))?;
+        let cache = app.path().app_cache_dir().map_err(|e| Error::Other(e.to_string()))?;
+        std::fs::create_dir_all(&cache)?;
+        let pack = cache.join(crate::tiger::PACK_FILE);
+        let emit = {
+            let app = app.clone();
+            move |p: crate::tiger::Progress| {
+                let _ = app.emit(TIGER_EVENT, p);
+            }
+        };
+        if !pack.is_file() {
+            crate::tiger::download(crate::tiger::PACK_URL, &pack, emit.clone()).await?;
+        }
+        let dest = tauri::async_runtime::spawn_blocking(move || {
+            let r = crate::tiger::install_pack(&pack, &singers, &cache, emit);
+            // a good pack is no longer needed; a broken one must be downloaded again
+            let _ = std::fs::remove_file(&pack);
+            r
+        })
+        .await
+        .map_err(|e| Error::Other(format!("installazione di Tiger: {e}")))??;
+        Ok(dest.to_string_lossy().to_string())
+    }
+    .await;
+    TIGER_BUSY.store(false, Ordering::SeqCst);
+    res
+}
+
 fn all_singers(app: &tauri::AppHandle) -> Vec<SingerInfo> {
     singers::list_singers(own_singers_dir(app).as_deref())
 }

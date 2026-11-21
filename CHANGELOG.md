@@ -7,6 +7,7 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 ### Nuovo
 - **Latino:** nuova lingua «Latino (ecclesiastico)» per i canti sacri, con la pronuncia all'italiana (*excelsis*, *agnus*, *gratia*, *caeli*…). Viene riconosciuta da sola dalle parole del testo e si canta con i cantanti italiani.
 - **Partiture MusicXML:** oltre ai `.mscz` si possono aprire file `.musicxml`, `.mxl` e `.xml`, esportati da Finale, Sibelius, Dorico, MuseScore o da programmi che leggono i PDF.
+- **Scarica Tiger:** se non c'è nessun cantante, un pulsante scarica TIGER DS dal sito dell'autore e lo installa, senza comandi nel Terminale.
 - **Progetti `.msng`:** i progetti hanno un'estensione più corta e si aprono con un doppio clic nel Finder. I `.musesing` si aprono ancora e al salvataggio diventano `.msng`.
 
 ## 0.7.0 — 16 novembre 2026

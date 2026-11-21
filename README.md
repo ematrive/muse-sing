@@ -58,7 +58,7 @@ Il primo avvio chiede il permesso per il microfono (`Info.plist` + `Entitlements
 |---|---|---|
 | Italiano e inglese | TIGER DS v106 (tigermeat) | https://github.com/spicytigermeat/tiger_diffsinger/releases/download/v106/TIGER_DS_v106_PACK.zip (lo zip dentro `Voice Library/`) |
 
-Installazione manuale, la più affidabile:
+Tiger non si può ridistribuire: il pulsante «Scarica Tiger» (`tiger.rs`) lo scarica dalla release ufficiale ed estrae lo zip interno in `Singers/Tiger`. Installazione manuale:
 
 ```bash
 S=~/Library/Application\ Support/app.musesing.desktop/Singers; mkdir -p "$S/<Nome>" && cd "$S/<Nome>" && unzip ~/Downloads/<voicebank>.zip
@@ -99,6 +99,7 @@ cd src-tauri && cargo test   # test del motore (su Linux serve libasound2-dev pe
 ```
 
 - `src-tauri/src/score.rs`: lettura del `.mscz` e riconoscimento del formato (`read_score`), ordine di esecuzione (ritornelli, salti), id stabile di ogni nota; `musicxml.rs`: lettura di MusicXML (`.musicxml`/`.mxl`) con la stessa disposizione (`assemble`).
+- `src-tauri/src/tiger.rs`: download di TIGER DS dalla release ufficiale e installazione del voicebank (lo zip dentro il pacchetto) nella cartella Singers.
 - `src-tauri/src/lyrics.rs`: sillabe → parole, pulizia, regole italiane, eccezioni inglesi, riconoscimento della lingua (per parole intere); `latin.rs`: latino ecclesiastico nei simboli G2p italiani, una vocale per sillaba.
 - `src-tauri/src/ustx.rs`: disposizione delle note e delle sillabe per il motore (formato dei progetti OpenUtau `.ustx` 0.10, usato anche dai test di confronto; l'app non esporta più `.ustx`).
 - `src-tauri/src/corpus.rs`: frasi da registrare (esercizi, vocalizzi, brani) e controllo della copertura di fonemi e note.

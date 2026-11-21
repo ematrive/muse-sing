@@ -42,7 +42,13 @@ export type SingersList = {
 export const api = {
   analyze: (path: string) => invoke<Analysis>("analyze", { path }),
   listSingers: () => invoke<SingersList>("list_singers"),
+  /** Downloads TIGER DS from its official release into Muse Sing's Singers folder. */
+  installTiger: () => invoke<string>("install_tiger"),
 };
+
+/** Progress of `installTiger` (event `tiger-progress`); `total` is 0 when unknown. */
+export type TigerProgress = { phase: "download" | "extract"; done: number; total: number };
+export const TIGER_EVENT = "tiger-progress";
 
 // --- projects (.msng) ----------------------------------------------------------------------
 

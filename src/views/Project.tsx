@@ -34,6 +34,7 @@ import {
   PROJECT_EXTENSION,
   PROJECT_EXTENSIONS,
   SCORE_EXTENSIONS,
+  TIGER_EVENT,
   errorText,
   LANGS,
   projectApi,
@@ -54,6 +55,7 @@ import {
   type SingerInfo,
   type SingersList,
   type SingProgress,
+  type TigerProgress,
 } from "../lib/api";
 import { Editor } from "./project/Editor";
 import { ScoreRoll } from "./project/ScoreRoll";
@@ -77,6 +79,13 @@ function singerLabel(s: SingerInfo, lang: Lang) {
 }
 
 const TEMPOS = [1, 0.9, 0.8, 0.7, 0.6];
+const MB = 1024 * 1024;
+function tigerText(t: TigerProgress) {
+  const pct = t.total ? ` ${Math.floor((t.done / t.total) * 100)}%` : "";
+  if (t.phase === "extract") return `Installazione…${pct}`;
+  return `Download…${pct} (${Math.round(t.done / MB)}${t.total ? ` di ${Math.round(t.total / MB)}` : ""} MB)`;
+}
+
 const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 const join = (dir: string, name: string) => (dir ? `${dir.replace(/[\\/]$/, "")}/${name}` : name);
 const fileSafe = (s: string) => s.replace(/[/\\:*?"<>|]/g, "-").trim() || "Muse Sing";
@@ -206,6 +215,23 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
       setError(errorText(e));
     }
   }, []);
+
+  const [tiger, setTiger] = useState<TigerProgress | null>(null);
+  const installTiger = useCallback(async () => {
+    setError(null);
+    setTiger({ phase: "download", done: 0, total: 0 });
+    const un = await listen<TigerProgress>(TIGER_EVENT, (e) => setTiger(e.payload));
+    try {
+      const folder = await api.installTiger();
+      await loadSingers();
+      setNotice({ text: "Tiger è installato.", path: folder });
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      un();
+      setTiger(null);
+    }
+  }, [loadSingers]);
 
   const loadRecent = useCallback(() => {
     projectApi.recent().then(setRecent, () => {});
@@ -739,8 +765,20 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
             </div>
             {singers && diffsinger.length === 0 && (
               <div className="mb-2 rounded-md border border-zinc-300 p-2 text-zinc-500 dark:border-zinc-700">
-                Nessun cantante trovato in {[...singers.folders, singers.own_folder].filter(Boolean).join(", ")}. Copia un voicebank DiffSinger in una di queste
-                cartelle e premi «aggiorna cantanti».
+                <p>
+                  Nessun cantante installato. Muse Sing usa <b>TIGER DS</b> (di tigermeat), che canta in italiano, latino e inglese: si scarica gratis dal sito
+                  dell'autore (circa 550 MB), solo per uso non commerciale e citando l'autore.
+                </p>
+                <div className="mt-2 flex items-center gap-3">
+                  <button className="btn-primary" onClick={installTiger} disabled={!!tiger || rendering}>
+                    {tiger ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Scarica Tiger
+                  </button>
+                  {tiger && <span className="text-xs">{tigerText(tiger)}</span>}
+                </div>
+                <p className="mt-2 text-xs">
+                  Oppure copia un voicebank DiffSinger in una di queste cartelle e premi «aggiorna cantanti»:{" "}
+                  {[...singers.folders, singers.own_folder].filter(Boolean).join(", ")}.
+                </p>
               </div>
             )}
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">

@@ -13,6 +13,7 @@ pub mod project;
 pub mod score;
 pub mod sing;
 pub mod singers;
+pub mod tiger;
 pub mod ustx;
 pub mod voice;
 
@@ -34,6 +35,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::analyze,
             commands::list_singers,
+            commands::install_tiger,
             commands::voice_recent,
             commands::voice_create,
             commands::voice_open,

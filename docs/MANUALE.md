@@ -14,9 +14,9 @@ Servono due cose, da installare una volta sola: un cantante e Muse Sing. OpenUta
 
 ### 1. Il cantante (voicebank)
 
-Per ora Muse Sing usa **TIGER DS v106**, che canta sia in italiano sia in inglese: https://github.com/spicytigermeat/tiger_diffsinger/releases/download/v106/TIGER_DS_v106_PACK.zip
+Per ora Muse Sing usa **TIGER DS v106**, che canta in italiano, latino e inglese. La licenza non permette di includerlo nell'app, ma Muse Sing lo scarica per te dal sito dell'autore: apri una partitura e, se non c'è nessun cantante, premi **Scarica Tiger** (circa 550 MB; ci vogliono alcuni minuti). Quando ha finito, Tiger compare tra i cantanti.
 
-Nel pacchetto c'è un secondo zip dentro `Voice Library/`: è quello da decomprimere, nella cartella dei cantanti di Muse Sing. Dal Terminale:
+Per installarlo a mano: il pacchetto è https://github.com/spicytigermeat/tiger_diffsinger/releases/download/v106/TIGER_DS_v106_PACK.zip e dentro `Voice Library/` c'è un secondo zip: è quello da decomprimere, nella cartella dei cantanti di Muse Sing. Dal Terminale:
 
 ```
 mkdir -p ~/Library/Application\ Support/app.musesing.desktop/Singers/Tiger

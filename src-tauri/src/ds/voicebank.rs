@@ -210,7 +210,7 @@ impl Voicebank {
         }
         let name = self.config.vocoder.clone().unwrap_or_default();
         let found = vocoder_dirs().into_iter().map(|d| d.join(&name)).find(|d| !name.is_empty() && d.join("vocoder.yaml").is_file());
-        found.ok_or_else(|| Error::Other(format!("vocoder «{name}» non trovato (installalo in OpenUtau)")))
+        found.ok_or_else(|| Error::Other(format!("il cantante è incompleto: manca il vocoder «{name}» (cartella dsvocoder)")))
     }
 
     fn vocoder_config(&self) -> Result<(PathBuf, VocoderConfig)> {

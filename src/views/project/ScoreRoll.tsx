@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { RollPart } from "../../lib/api";
+import type { RollBar, RollPart } from "../../lib/api";
+import { BarGrid } from "./bars";
 
 const RULER = 20;
 const LANE = 58;
@@ -18,6 +19,7 @@ function fmt(sec: number) {
  */
 export function ScoreRoll({
   parts,
+  bars,
   cursor,
   playing,
   highlight,
@@ -26,6 +28,8 @@ export function ScoreRoll({
   onLoop,
 }: {
   parts: RollPart[];
+  /** measures as played; without them the grid is in seconds */
+  bars: RollBar[];
   cursor: number;
   playing: boolean;
   highlight: string | null;
@@ -126,14 +130,18 @@ export function ScoreRoll({
                 else onSeek(d.from);
               }}
             />
-            {ticks.map((t) => (
-              <g key={t} pointerEvents="none">
-                <line x1={x(t)} x2={x(t)} y1={RULER - 6} y2={height} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                <text x={x(t) + 3} y={13} className="fill-zinc-500 text-[10px]">
-                  {fmt(t)}
-                </text>
-              </g>
-            ))}
+            {bars.length > 0 ? (
+              <BarGrid bars={bars} zoom={zoom} ruler={RULER} bottom={height} />
+            ) : (
+              ticks.map((t) => (
+                <g key={t} pointerEvents="none">
+                  <line x1={x(t)} x2={x(t)} y1={RULER - 6} y2={height} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                  <text x={x(t) + 3} y={13} className="fill-zinc-500 text-[10px]">
+                    {fmt(t)}
+                  </text>
+                </g>
+              ))
+            )}
             {shownLoop && (
               <rect
                 x={x(shownLoop[0])}

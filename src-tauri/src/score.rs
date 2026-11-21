@@ -53,13 +53,27 @@ impl Part {
 #[derive(Debug, Clone)]
 pub struct Score {
     pub title: Option<String>,
-    /// (numerator, denominator) of the last time signature found.
+    /// (numerator, denominator) of the first time signature.
     pub time_sig: (i32, i32),
+    /// The time signatures used, each once, in the order they first appear.
+    pub time_sigs: Vec<(i32, i32)>,
+    /// The measures as they are played (repeats unrolled).
+    pub bars: Vec<Bar>,
     /// (position in beats, quarter notes per second), sorted.
     pub tempos: Vec<(Beats, f64)>,
     pub parts: Vec<Part>,
     /// Things in the score that the conversion ignores or flattens.
     pub warnings: Vec<String>,
+}
+
+/// One measure as played.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bar {
+    pub start: Beats,
+    /// Number printed in the score (`None`: a measure left out of the count, like a pickup).
+    pub number: Option<String>,
+    /// The time signature, on the first measure and where it changes.
+    pub time_sig: Option<(i32, i32)>,
 }
 
 const GRACE_TAGS: &[&str] = &[
@@ -228,8 +242,23 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
 
     let staves: Vec<Node> = score.children().filter(|c| c.has_tag_name("Staff")).collect();
     let mut warnings = vec![];
-    let mut time_sigs: Vec<(i32, i32)> = vec![];
     let mut lyrics_other_voice = BTreeSet::new();
+
+    // printed measure numbers, as MuseScore counts them: measures marked "exclude from measure
+    // count" (irregular) get none, "add to measure number" (noOffset) moves the count
+    let mut numbers: Vec<Option<String>> = vec![];
+    if let Some(first) = staves.first() {
+        let mut no: i64 = 1;
+        for meas in first.children().filter(|c| c.has_tag_name("Measure")) {
+            no += child_text(meas, "noOffset").and_then(|t| t.trim().parse::<i64>().ok()).unwrap_or(0);
+            if child_text(meas, "irregular").is_some_and(|t| t.trim() != "0") {
+                numbers.push(None);
+            } else {
+                numbers.push(Some(no.to_string()));
+                no += 1;
+            }
+        }
+    }
 
     // 1) read every staff measure by measure
     let mut staff_data: Vec<StaffData> = vec![];
@@ -237,15 +266,17 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
         let sid = staff.attribute("id").unwrap_or("").to_string();
         let name = staff_name.get(&sid).cloned().unwrap_or_else(|| sid.clone());
         let mut ms = vec![];
-        for meas in staff.children().filter(|c| c.has_tag_name("Measure")) {
-            ms.push(read_measure(meas, &name, &mut time_sigs, &mut lyrics_other_voice));
+        for (mi, meas) in staff.children().filter(|c| c.has_tag_name("Measure")).enumerate() {
+            let mut m = read_measure(meas, &name, &mut lyrics_other_voice);
+            m.number = numbers.get(mi).cloned().unwrap_or_else(|| Some((mi + 1).to_string()));
+            ms.push(m);
         }
         staff_data.push(StaffData { name, id: sid, measures: ms });
     }
     if score.descendants().any(|d| d.has_tag_name("MeasureRepeat")) {
         warnings.push("La partitura ha battute di ripetizione (simile): restano vuote.".into());
     }
-    Ok(assemble(title, staff_data, time_sigs, lyrics_other_voice, warnings))
+    Ok(assemble(title, staff_data, lyrics_other_voice, warnings))
 }
 
 /// The measures of one staff as written, before repeats are unrolled.
@@ -261,7 +292,6 @@ pub(crate) struct StaffData {
 pub(crate) fn assemble(
     title: Option<String>,
     staff_data: Vec<StaffData>,
-    time_sigs: Vec<(i32, i32)>,
     lyrics_other_voice: BTreeSet<String>,
     mut warnings: Vec<String>,
 ) -> Score {
@@ -286,6 +316,35 @@ pub(crate) fn assemble(
         .collect();
     let (order, unsupported) = playback_order(&structure);
     warnings.extend(unsupported);
+
+    // time signatures and printed numbers of the written measures (first staff that has them)
+    let sig_at: Vec<Option<(i32, i32)>> =
+        (0..n_meas).map(|i| staff_measures.iter().filter_map(|ms| ms.get(i)).find_map(|m| m.time_sig)).collect();
+    let mut time_sigs: Vec<(i32, i32)> = vec![];
+    for s in sig_at.iter().flatten() {
+        if !time_sigs.contains(s) {
+            time_sigs.push(*s);
+        }
+    }
+    // the signature in force in each written measure
+    let mut cur = time_sigs.first().copied().unwrap_or((4, 4));
+    let in_force: Vec<(i32, i32)> = sig_at
+        .iter()
+        .map(|s| {
+            cur = s.unwrap_or(cur);
+            cur
+        })
+        .collect();
+    let number_at: Vec<Option<String>> =
+        (0..n_meas).map(|i| staff_measures.iter().find_map(|ms| ms.get(i)).and_then(|m| m.number.clone())).collect();
+    let mut bars: Vec<Bar> = vec![];
+    let mut bstart: Beats = Ratio::from_integer(0);
+    for &(mi, _) in &order {
+        let sig = in_force[mi];
+        let changed = bars.is_empty() || in_force[order[bars.len() - 1].0] != sig;
+        bars.push(Bar { start: bstart, number: number_at[mi].clone(), time_sig: changed.then_some(sig) });
+        bstart += lens[mi];
+    }
 
     // 3) lay the measures out in that order
     let max_verse = staff_measures.iter().copied().flatten().flat_map(|m| &m.notes).flat_map(|n| n.lyrics.keys()).max().copied().unwrap_or(0);
@@ -361,9 +420,6 @@ pub(crate) fn assemble(
         let v: Vec<String> = lyrics_other_voice.into_iter().collect();
         warnings.push(format!("Testo nella seconda voce del pentagramma ({}): viene usata solo la prima voce.", v.join(", ")));
     }
-    if time_sigs.len() > 1 {
-        warnings.push("Il metro cambia durante il brano: le note restano a tempo, ma la griglia delle battute in OpenUtau segue solo l'ultimo metro.".into());
-    }
 
     let mut tempos: Vec<(Beats, f64)> = tempos.into_iter().collect();
     if tempos.is_empty() {
@@ -371,7 +427,9 @@ pub(crate) fn assemble(
     }
     Score {
         title,
-        time_sig: time_sigs.last().copied().unwrap_or((4, 4)),
+        time_sig: time_sigs.first().copied().unwrap_or((4, 4)),
+        time_sigs,
+        bars,
         tempos,
         parts,
         warnings,
@@ -425,9 +483,13 @@ pub(crate) struct MeasureData {
     /// (offset in the measure, quarter notes per second)
     pub tempos: Vec<(Beats, f64)>,
     pub structure: Structure,
+    /// Time signature written in this measure.
+    pub time_sig: Option<(i32, i32)>,
+    /// Printed number (`None`: left out of the count).
+    pub number: Option<String>,
 }
 
-fn read_measure(meas: Node, staff_name: &str, time_sigs: &mut Vec<(i32, i32)>, lyrics_other_voice: &mut BTreeSet<String>) -> MeasureData {
+fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<String>) -> MeasureData {
     let mut st = Structure::default();
     if child(meas, "startRepeat").is_some() {
         st.start_repeat = true;
@@ -437,6 +499,7 @@ fn read_measure(meas: Node, staff_name: &str, time_sigs: &mut Vec<(i32, i32)>, l
     }
     let mut notes = vec![];
     let mut tempos = vec![];
+    let mut time_sig = None;
     let mut mlen: Option<Beats> = None;
     let zero: Beats = Ratio::from_integer(0);
     for (vi, voice) in meas.children().filter(|c| c.has_tag_name("voice")).enumerate() {
@@ -449,9 +512,7 @@ fn read_measure(meas: Node, staff_name: &str, time_sigs: &mut Vec<(i32, i32)>, l
                 "TimeSig" => {
                     let n = child_text(el, "sigN").and_then(|s| s.parse().ok()).unwrap_or(4);
                     let d = child_text(el, "sigD").and_then(|s| s.parse().ok()).unwrap_or(4);
-                    if time_sigs.last() != Some(&(n, d)) {
-                        time_sigs.push((n, d));
-                    }
+                    time_sig.get_or_insert((n, d));
                 }
                 "Tempo" => {
                     if let Some(t) = child_text(el, "tempo").and_then(|s| s.parse::<f64>().ok()) {
@@ -542,7 +603,7 @@ fn read_measure(meas: Node, staff_name: &str, time_sigs: &mut Vec<(i32, i32)>, l
     if let Some(l) = meas.attribute("len").and_then(ratio) {
         mlen = Some(l * 4);
     }
-    MeasureData { len: mlen.unwrap_or(zero), notes, tempos, structure: st }
+    MeasureData { len: mlen.unwrap_or(zero), notes, tempos, structure: st, time_sig, number: None }
 }
 
 /// Measures in playback order, each with its pass number through the current repeat (1-based,
@@ -659,11 +720,39 @@ fn last_pass_of(st: &[Structure], i: usize) -> u32 {
 mod tests {
     use super::*;
 
+    /// (start in quarters, printed number, time signature) of a played measure
+    type BarRow<'a> = (i64, Option<&'a str>, Option<(i32, i32)>);
+
     fn bars(n: usize) -> Vec<Structure> {
         vec![Structure::default(); n]
     }
     fn idx(o: &[(usize, u32)]) -> Vec<usize> {
         o.iter().map(|(i, _)| i + 1).collect() // 1-based bar numbers
+    }
+
+    #[test]
+    fn bars_follow_repeats_and_time_signature_changes() {
+        let q = "<Rest><durationType>quarter</durationType></Rest>";
+        let xml = format!(
+            r#"<museScore><Score><Staff id="1">
+            <Measure len="1/4"><irregular>1</irregular><voice><TimeSig><sigN>2</sigN><sigD>4</sigD></TimeSig>{q}</voice></Measure>
+            <Measure><startRepeat/><voice>{q}{q}</voice></Measure>
+            <Measure><endRepeat>2</endRepeat><voice>{q}{q}</voice></Measure>
+            <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>{q}{q}{q}{q}</voice></Measure>
+            </Staff></Score></museScore>"#
+        );
+        let s = parse_mscx(&xml).unwrap();
+        assert!(s.warnings.is_empty(), "{:?}", s.warnings);
+        assert_eq!(s.time_sig, (2, 4));
+        assert_eq!(s.time_sigs, vec![(2, 4), (4, 4)]);
+        let s2 = parse_mscx(&xml.replace("<sigN>4</sigN><sigD>4</sigD>", "<sigN>2</sigN><sigD>4</sigD>")).unwrap();
+        assert_eq!(s2.time_sigs, vec![(2, 4)], "each signature once");
+        let got: Vec<BarRow> =
+            s.bars.iter().map(|b| (b.start.to_integer(), b.number.as_deref(), b.time_sig)).collect();
+        assert_eq!(
+            got,
+            vec![(0, None, Some((2, 4))), (1, Some("1"), None), (3, Some("2"), None), (5, Some("1"), None), (7, Some("2"), None), (9, Some("3"), Some((4, 4)))]
+        );
     }
 
     #[test]

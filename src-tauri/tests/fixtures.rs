@@ -146,6 +146,25 @@ fn note_ids_are_unique() {
 /// A MusicXML exported by MuseScore from a fixture score (`<name>.musicxml` or `<name>.mxl` next to
 /// the `.mscz`) reads into the same parts, notes, ids and syllables. Skipped without the export.
 #[test]
+fn sonnet_time_signature_changes() {
+    let Some(dir) = fixtures() else { return };
+    let s = read_mscz(&dir.join("sonnet.mscz")).unwrap();
+    assert!(s.time_sigs.len() > 1, "{:?}", s.time_sigs);
+    let changes: Vec<_> = s.bars.iter().filter_map(|b| b.time_sig).collect();
+    eprintln!("sonnet: {:?}, {} bars, changes {:?}", s.time_sigs, s.bars.len(), changes);
+    assert_eq!(s.time_sigs, vec![(4, 4), (2, 4)]);
+    assert!(changes.len() > s.time_sigs.len());
+    // every bar lasts what its time signature says (the pickup aside)
+    let ends: Vec<_> = s.bars.iter().skip(1).map(|b| b.start).chain(std::iter::once(s.parts.iter().flat_map(|p| p.notes.last()).map(|n| n.start + n.dur).max().unwrap())).collect();
+    let mut sig = (4, 4);
+    for (b, end) in s.bars.iter().zip(ends).skip(1) {
+        sig = b.time_sig.unwrap_or(sig);
+        let expected = num_rational::Ratio::new(sig.0 as i64 * 4, sig.1 as i64);
+        assert!(end - b.start <= expected, "bar {:?} at {}: {} > {expected}", b.number, b.start, end - b.start);
+    }
+}
+
+#[test]
 fn musicxml_matches_mscz() {
     let Some(dir) = fixtures() else { return };
     for name in ["santo", "agnello", "adoro", "sonnet"] {
@@ -160,6 +179,9 @@ fn musicxml_matches_mscz() {
         for (x, y) in a.tempos.iter().zip(&b.tempos) {
             assert!(x.0 == y.0 && (x.1 - y.1).abs() < 1e-4, "{name}: tempo {x:?} vs {y:?}");
         }
+        assert!(!a.warnings.iter().any(|w| w.contains("metro")), "{name}: {:?}", a.warnings);
+        assert_eq!(a.time_sigs, b.time_sigs, "{name}: time signatures");
+        assert_eq!(a.bars, b.bars, "{name}: bars");
         let sung = |s: &muse_sing_lib::score::Score| s.parts.iter().filter(|p| p.is_sung()).cloned().collect::<Vec<_>>();
         let (pa, pb) = (sung(&a), sung(&b));
         assert_eq!(pa.len(), pb.len(), "{name}: sung parts");

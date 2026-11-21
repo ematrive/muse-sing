@@ -158,7 +158,15 @@ function roll(tempoFactor = 1) {
     }
     return { name: p.name, sung: p.sung, notes };
   });
-  return { parts, tempos: [[0, 120 * tempoFactor]] };
+  // 4/4 at 120 (1920 ticks a measure), with a 3/4 passage from measure 9 to 12
+  const dur = q.get("long") ? 240 : an.duration_sec;
+  const bars = [];
+  for (let n = 1, tick = 0; tick / 960 < dur; n++) {
+    const sig = n === 9 ? "3/4" : n === 13 || n === 1 ? "4/4" : null;
+    bars.push({ tick, start: tick / 960 / tempoFactor, number: String(n), time_sig: sig });
+    tick += n >= 9 && n <= 12 ? 1440 : 1920;
+  }
+  return { parts, bars, tempos: [[0, 120 * tempoFactor]] };
 }
 function trackInfo(part: string) {
   const p = roll(rollTempo).parts.find((x) => x.name === part);

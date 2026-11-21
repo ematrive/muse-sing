@@ -81,6 +81,8 @@ mod tests {
         let score = Score {
             title: None,
             time_sig: (4, 4),
+            time_sigs: vec![(4, 4)],
+            bars: vec![],
             tempos: vec![(Ratio::from_integer(0), 1.0)],
             warnings: vec![],
             parts: vec![

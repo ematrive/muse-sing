@@ -1,5 +1,6 @@
 import { Eraser, Loader2, Play, RotateCcw, Waves } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { barAt, BarGrid } from "./bars";
 import { CURVE_STEP, errorText, singApi, type Curve, type PartEdits, type Roll, type TrackInfo, type WordInfo } from "../../lib/api";
 
 type Tool = "word" | "pitch" | "dynamics" | "gender" | "velocity";
@@ -236,17 +237,26 @@ export function Editor({
 
   // --- layers (memoized: the cursor moves many times a second while playing) ------------------------
 
+  const barOf = (id: string) => {
+    const n = notes.find((n) => n.id === id);
+    return n ? barAt(roll.bars ?? [], n.tick)?.number : undefined;
+  };
+
   const grid = useMemo(
     () =>
-      Array.from({ length: Math.ceil(total / 5) + 1 }, (_, i) => i * 5).map((t) => (
-        <g key={t} pointerEvents="none">
-          <line x1={t * zoom} x2={t * zoom} y1={RULER - 5} y2={RULER + NOTES_H + BAND_H + WORDS_H} className="stroke-zinc-200 dark:stroke-zinc-800" />
-          <text x={t * zoom + 3} y={11} className="fill-zinc-500 text-[10px]">
-            {Math.floor(t / 60)}:{String(t % 60).padStart(2, "0")}
-          </text>
-        </g>
-      )),
-    [total, zoom],
+      roll.bars?.length ? (
+        <BarGrid bars={roll.bars} zoom={zoom} ruler={RULER} bottom={RULER + NOTES_H + BAND_H + WORDS_H} />
+      ) : (
+        Array.from({ length: Math.ceil(total / 5) + 1 }, (_, i) => i * 5).map((t) => (
+          <g key={t} pointerEvents="none">
+            <line x1={t * zoom} x2={t * zoom} y1={RULER - 5} y2={RULER + NOTES_H + BAND_H + WORDS_H} className="stroke-zinc-200 dark:stroke-zinc-800" />
+            <text x={t * zoom + 3} y={11} className="fill-zinc-500 text-[10px]">
+              {Math.floor(t / 60)}:{String(t % 60).padStart(2, "0")}
+            </text>
+          </g>
+        ))
+      ),
+    [total, zoom, roll.bars],
   );
 
   const noteLayer = useMemo(
@@ -482,6 +492,7 @@ export function Editor({
         <WordPanel
           key={word.id + JSON.stringify(e.notes?.[word.id] ?? null) + (e.words?.[word.word] ?? "")}
           word={word}
+          bar={barOf(word.id)}
           info={info}
           edits={e}
           onChange={(next) => onChange(part, next)}
@@ -505,6 +516,7 @@ function ApplyButton({ upToDate, rendering, onClick }: { upToDate: boolean; rend
 /** Phonemes and timing of one word. */
 function WordPanel({
   word,
+  bar,
   info,
   edits,
   onChange,
@@ -513,6 +525,8 @@ function WordPanel({
   onApply,
 }: {
   word: WordInfo;
+  /** printed number of the measure where the word starts */
+  bar: string | null | undefined;
   info: TrackInfo;
   edits: PartEdits;
   onChange: (e: PartEdits) => void;
@@ -602,7 +616,7 @@ function WordPanel({
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="text-base font-semibold">«{word.word}»</span>
         <span className="text-xs text-zinc-500">
-          battuta {word.id.split(".")[0]}
+          battuta {bar ?? word.id.split(".")[0]}
           {word.id.split(".")[1] !== "1" ? ` (${word.id.split(".")[1]}ª volta)` : ""} · cantata: {shownPhones}
         </span>
       </div>

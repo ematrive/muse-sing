@@ -84,7 +84,9 @@ export type RecentProject = { path: string; title: string };
 export type RollNote = { id: string; tick: number; end_tick: number; start: number; end: number; pitch: number; lyric: string | null };
 export type RollPart = { name: string; sung: boolean; notes: RollNote[] };
 /** `tempos`: (tick, bpm at the practice tempo). */
-export type Roll = { parts: RollPart[]; tempos: [number, number][] };
+/** A measure as played: printed number (null for a pickup) and the time signature where it changes. */
+export type RollBar = { tick: number; start: number; number: string | null; time_sig: string | null };
+export type Roll = { parts: RollPart[]; bars: RollBar[]; tempos: [number, number][] };
 /** Name of the accompaniment track in the mix (project.rs ACCOMPANIMENT). */
 export const ACCOMPANIMENT = "Accompagnamento";
 

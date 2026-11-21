@@ -152,21 +152,20 @@ pub fn parse_musicxml(xml: &str) -> Result<Score> {
         }
     }
 
-    let mut time_sigs: Vec<(i32, i32)> = vec![];
     let mut lyrics_other_voice = BTreeSet::new();
     let mut warnings = vec![];
     let mut staves: Vec<StaffData> = vec![];
     for part in root.children().filter(|c| c.has_tag_name("part")) {
         let pid = part.attribute("id").unwrap_or("").to_string();
         let name = part_names.get(&pid).cloned().unwrap_or_else(|| pid.clone());
-        let (measures, n_staves) = read_part(part, &name, &mut time_sigs, &mut lyrics_other_voice, &mut warnings);
+        let (measures, n_staves) = read_part(part, &name, &mut lyrics_other_voice, &mut warnings);
         for (s, ms) in measures.into_iter().enumerate().take(n_staves) {
             let staff_name = if n_staves > 1 && s > 0 { format!("{name} ({})", s + 1) } else { name.clone() };
             staves.push(StaffData { name: staff_name, id: format!("{pid}.{}", s + 1), measures: ms });
         }
     }
     link_jumps(&mut staves);
-    Ok(assemble(title, staves, time_sigs, lyrics_other_voice, warnings))
+    Ok(assemble(title, staves, lyrics_other_voice, warnings))
 }
 
 /// A jump whose target label doesn't exist (exporters name segni and codas freely) goes to the
@@ -196,7 +195,6 @@ fn link_jumps(staves: &mut [StaffData]) {
 fn read_part(
     part: Node,
     name: &str,
-    time_sigs: &mut Vec<(i32, i32)>,
     lyrics_other_voice: &mut BTreeSet<String>,
     warnings: &mut Vec<String>,
 ) -> (Vec<Vec<MeasureData>>, usize) {
@@ -228,6 +226,9 @@ fn read_part(
         let mut st = Structure::default();
         let mut notes: Vec<Vec<NoteData>> = (0..n_staves).map(|_| vec![]).collect();
         let mut tempos: Vec<(Beats, f64)> = vec![];
+        let mut time_sig = None;
+        // a pickup or a split measure (implicit) is left out of the count
+        let number = meas.attribute("number").filter(|_| meas.attribute("implicit") != Some("yes")).map(|n| n.trim().to_string());
         let mut pos = zero;
         let mut max_pos = zero;
         // last note of each staff in this measure, for <chord/> notes
@@ -242,9 +243,7 @@ fn read_part(
                         let n: i32 = child_text(t, "beats").map(|b| b.split('+').filter_map(|x| x.trim().parse::<i32>().ok()).sum()).unwrap_or(4);
                         let d: i32 = child_text(t, "beat-type").and_then(|b| b.parse().ok()).unwrap_or(4);
                         sig = (n, d);
-                        if time_sigs.last() != Some(&sig) {
-                            time_sigs.push(sig);
-                        }
+                        time_sig.get_or_insert(sig);
                     }
                 }
                 "backup" => pos -= divs(el, "duration", divisions),
@@ -373,7 +372,7 @@ fn read_part(
         let nominal: Beats = Ratio::new(sig.0 as i64 * 4, sig.1.max(1) as i64);
         let len = if max_pos > zero { max_pos } else { nominal };
         for (s, staff_notes) in notes.into_iter().enumerate() {
-            out[s].push(MeasureData { len, notes: staff_notes, tempos: tempos.clone(), structure: st.clone() });
+            out[s].push(MeasureData { len, notes: staff_notes, tempos: tempos.clone(), structure: st.clone(), time_sig, number: number.clone() });
         }
     }
     if open_ending.is_some() {
@@ -407,6 +406,9 @@ fn read_part(
 mod tests {
     use super::*;
 
+    /// (start in quarters, printed number, time signature) of a played measure
+    type BarRow<'a> = (i64, Option<&'a str>, Option<(i32, i32)>);
+
     fn note(step: &str, octave: i32, dur: i32, extra: &str) -> String {
         format!("<note><pitch><step>{step}</step><octave>{octave}</octave></pitch><duration>{dur}</duration><voice>1</voice>{extra}</note>")
     }
@@ -417,7 +419,11 @@ mod tests {
 
     /// Pickup bar, |: two verses :| with first and second endings, a tie, a chord, a rest.
     fn sample() -> String {
-        let m = |n: u32, body: &str| format!(r#"<measure number="{n}">{body}</measure>"#);
+        // the pickup is "implicit": left out of the measure count
+        let m = |n: u32, body: &str| {
+            let implicit = if n == 0 { r#" implicit="yes""# } else { "" };
+            format!(r#"<measure number="{n}"{implicit}>{body}</measure>"#)
+        };
         let measures = [
             m(0, &format!(
                 r#"<attributes><divisions>2</divisions><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
@@ -484,6 +490,9 @@ mod tests {
         assert_eq!(p.notes[3].dur, Ratio::from_integer(2), "tie merged");
         assert_eq!(p.notes[0].id, "1.1.0");
         assert_eq!(p.notes[5].id, "2.2.0");
+        let bars: Vec<BarRow> =
+            s.bars.iter().map(|b| (b.start.to_integer(), b.number.as_deref(), b.time_sig)).collect();
+        assert_eq!(bars, vec![(0, None, Some((3, 4))), (1, Some("1"), None), (4, Some("2"), None), (7, Some("1"), None), (10, Some("3"), None)]);
     }
 
     #[test]

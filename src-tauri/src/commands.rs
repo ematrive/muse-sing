@@ -91,15 +91,23 @@ fn analysis_of(p: &Path, display: &Path) -> Result<Analysis> {
     }
     secs += (to_f(end) - last.0) / last.1;
     let q = score.tempos[0].1;
+    // the tempo mark refers to the opening time signature (dotted quarter in 6/8, 9/8, 12/8)
     let (n, d) = score.time_sig;
     let bpm = if d == 8 && n % 3 == 0 { q * 60.0 / 1.5 } else { q * 60.0 };
+    let mut sigs: Vec<String> = score.time_sigs.iter().take(3).map(|(n, d)| format!("{n}/{d}")).collect();
+    if sigs.is_empty() {
+        sigs.push(format!("{n}/{d}"));
+    }
+    if score.time_sigs.len() > 3 {
+        sigs.push("…".into());
+    }
     let out = display.with_extension("");
     Ok(Analysis {
         file_name: display.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(),
         title: score.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| stem(display)),
         path,
         lang,
-        time_sig: format!("{n}/{d}"),
+        time_sig: sigs.join(", "),
         bpm: (bpm * 10.0).round() / 10.0,
         duration_sec: secs.round(),
         parts,
@@ -244,7 +252,7 @@ pub async fn list_singers(app: tauri::AppHandle) -> Result<SingersList> {
         }
         let parts = prefs.parts.into_iter().filter(|(_, p)| singers.iter().any(|s| s.id == p.singer)).collect();
         SingersList {
-            folders: singers::singer_roots().iter().map(|p| p.to_string_lossy().to_string()).collect(),
+            folders: singers::singer_roots().iter().filter(|p| p.is_dir()).map(|p| p.to_string_lossy().to_string()).collect(),
             own_folder: own_singers_dir(&app).map(|p| p.to_string_lossy().to_string()),
             singers,
             selected,
@@ -751,8 +759,21 @@ pub struct RollPart {
 }
 
 #[derive(Serialize)]
+pub struct RollBar {
+    /// Position in ticks of the written score, and in seconds.
+    pub tick: i64,
+    pub start: f64,
+    /// Number printed in the score (`None`: left out of the count, like a pickup).
+    pub number: Option<String>,
+    /// "3/4" on the first measure and where the time signature changes.
+    pub time_sig: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct Roll {
     pub parts: Vec<RollPart>,
+    /// The measures as played (repeats unrolled).
+    pub bars: Vec<RollBar>,
     /// (tick, bpm at the practice tempo), to turn ticks into seconds.
     pub tempos: Vec<(i64, f64)>,
 }
@@ -789,7 +810,17 @@ pub async fn score_roll(score_path: String, tempo_factor: f64) -> Result<Roll> {
                     .collect(),
             })
             .collect();
-        Ok(Roll { parts, tempos })
+        let bars = score
+            .bars
+            .iter()
+            .map(|b| RollBar {
+                tick: ticks(b.start).round() as i64,
+                start: sec(b.start),
+                number: b.number.clone(),
+                time_sig: b.time_sig.map(|(n, d)| format!("{n}/{d}")),
+            })
+            .collect();
+        Ok(Roll { parts, bars, tempos })
     })
     .await
 }

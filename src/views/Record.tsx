@@ -76,7 +76,7 @@ function Start({ onOpen, setError }: { onOpen: (v: VoiceState) => void; setError
         <p className="text-zinc-600 dark:text-zinc-400">
           Muse Sing ti fa cantare una serie di frasi brevi, con note e parole già scritte: esercizi che coprono tutti i suoni
           dell'italiano, vocalizzi su tutta l'estensione e i brani del vostro coro. Con circa un'ora di registrazioni per voce si
-          addestra un cantante DiffSinger italiano da usare in Muse Sing (e in OpenUtau).
+          addestra un cantante DiffSinger italiano da usare in Muse Sing.
         </p>
         <ul className="grid gap-1 text-zinc-600 sm:grid-cols-2 dark:text-zinc-400">
           <li className="flex gap-2"><Headphones className="h-4 w-4 shrink-0 text-violet-600" /> Cuffie chiuse: la guida non deve finire nel microfono.</li>

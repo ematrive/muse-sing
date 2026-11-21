@@ -700,7 +700,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
             <div className="min-w-0 flex-1">
               <div className="text-base font-semibold">{project.title}</div>
               <div className="truncate text-zinc-500">
-                {analysis.file_name} · {analysis.time_sig} · {/^(6|9|12)\/8$/.test(analysis.time_sig) ? "♩." : "♩"} = {analysis.bpm} ·{" "}
+                {analysis.file_name} · {analysis.time_sig} · {/^(6|9|12)\/8\b/.test(analysis.time_sig) ? "♩." : "♩"} = {analysis.bpm} ·{" "}
                 {fmtDuration(analysis.duration_sec)}
               </div>
             </div>
@@ -1020,6 +1020,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
             <section className="card">
               <ScoreRoll
                 parts={roll.parts}
+                bars={roll.bars ?? []}
                 cursor={pos}
                 playing={!!play}
                 highlight={mine}

@@ -68,8 +68,8 @@ Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo rico
 ### Generare e ascoltare
 
 1. Premi **Genera audio**. Il Mac calcola le voci una dopo l'altra: per un brano di 3-4 minuti con quattro voci servono alcuni minuti. Puoi annullare; la frase in corso finisce prima di fermarsi.
-2. Premi **Ascolta**. Con la barra o con un clic sul rullo scegli da dove partire; durante l'ascolto il rullo scorre con la linea rossa.
-3. **Ripetere un tratto:** trascina sul righello in cima al rullo (i minuti) per scegliere un tratto, che si colora di giallo: l'ascolto lo ripete finché non premi Ferma. La × accanto al tratto, sopra, lo toglie.
+2. Premi **Ascolta**. Con la barra o con un clic sul rullo scegli da dove partire; durante l'ascolto il rullo scorre con la linea rossa. Il righello in cima mostra le battute con gli stessi numeri della partitura (anche nei ritornelli, dove i numeri si ripetono), e in viola il metro dove cambia.
+3. **Ripetere un tratto:** trascina sul righello in cima al rullo per scegliere un tratto, che si colora di giallo: l'ascolto lo ripete finché non premi Ferma. La × accanto al tratto, sopra, lo toglie.
 4. **Mix** di ogni voce e dell'accompagnamento: volume, posizione a sinistra o a destra (pan), «muta» per escluderla, «solo» per sentire solo le tracce con «solo» acceso. Le modifiche si sentono subito, senza rigenerare. Doppio clic su un cursore lo riporta a zero.
 
 Le voci già generate con le stesse scelte vengono riusate: se cambi il cantante di una sola voce, si rigenera solo quella, e dopo un ritocco solo le frasi toccate. Se cambi voci, cantanti, lingua, intonazione, velocità o ritocchi dopo aver generato, Muse Sing chiede di generare di nuovo.

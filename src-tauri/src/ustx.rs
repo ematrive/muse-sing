@@ -200,7 +200,7 @@ pub fn build(score: &Score, opt: &Options) -> Project {
         cache_dir: "UCache".into(),
         ustx_version: "0.10".into(),
         key: 0,
-        time_signatures: vec![TimeSignature { bar_position: 0, beat_per_bar: score.time_sig.0, beat_unit: score.time_sig.1 }],
+        time_signatures: vec![TimeSignature { bar_position: 0, beat_per_bar: last_sig(score).0, beat_unit: last_sig(score).1 }],
         tempos: score
             .tempos
             .iter()
@@ -214,4 +214,9 @@ pub fn build(score: &Score, opt: &Options) -> Project {
 
 pub fn to_yaml(p: &Project) -> String {
     serde_yaml::to_string(p).expect("ustx serialization")
+}
+
+/// OpenUtau's bar grid follows a single time signature: the last one, as the original converter did.
+fn last_sig(score: &Score) -> (i32, i32) {
+    score.bars.iter().rev().find_map(|b| b.time_sig).unwrap_or(score.time_sig)
 }

@@ -2,7 +2,7 @@
 //! and exports it, to listen to engine and mix changes outside the app.
 //!
 //!   cargo run --release --example sing_mix -- <score> <voicebank dir> <out.mp3>
-//!       [--voices 1|2|3] [--ambience nessuno|stanza|chiesa|cattedrale] [--color COLOR] [--no-accomp]
+//!       [--voices 1|2|3] [--ambience nessuno|stanza|chiesa|cattedrale] [--reverb 0..1] [--color COLOR] [--no-accomp]
 use std::path::PathBuf;
 
 use muse_sing_lib::fx::Ambience;
@@ -80,7 +80,7 @@ fn main() {
             MixPart { name, volume_db: if accomp { -6.0 } else { 0.0 }, pan: 0.0, mute: false, solo: false }
         })
         .collect();
-    let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience)).unwrap();
+    let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience, opt("--reverb").and_then(|v| v.parse().ok()).unwrap_or(muse_sing_lib::fx::DEFAULT_AMOUNT))).unwrap();
     mix::export(&out, &l, &r, muse_sing_lib::ds::render::SAMPLE_RATE, "prova").expect("export");
     eprintln!("scritto {}", out.display());
 }

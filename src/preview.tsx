@@ -125,6 +125,7 @@ function opened(path: string | null) {
       accompaniment: { enabled: an.parts.some((p) => !p.sung), volume_db: -6, pan: 0, mute: false, solo: false },
       edits: {},
       ambience: "chiesa",
+      reverb: 0.5,
     },
     path,
     score_path: "/tmp/cache/projects/0123.mscz",

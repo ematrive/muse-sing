@@ -545,6 +545,7 @@ pub struct PlayDone {
 
 /// Plays the mix of the rendered parts from `from_sec` (`sing-play` / `sing-play-done` events).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // the arguments of a Tauri command
 pub async fn sing_play(
     app: tauri::AppHandle,
     audio: State<'_, AudioState>,
@@ -553,9 +554,10 @@ pub async fn sing_play(
     from_sec: f64,
     loop_range: Option<(f64, f64)>,
     ambience: Option<Ambience>,
+    reverb: Option<f32>,
 ) -> Result<u64> {
     let (sing, engine) = (state.0.clone(), audio.0.clone());
-    let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default()))?;
+    let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
     let job = blocking({
         let engine = engine.clone();
         move || {
@@ -587,10 +589,10 @@ pub fn sing_stop(audio: State<AudioState>, state: State<SingState>) {
 
 /// Exports the mix; the format follows the extension (.mp3, .flac, .wav).
 #[tauri::command]
-pub async fn sing_export(state: State<'_, SingState>, mix: Vec<MixPart>, path: String, ambience: Option<Ambience>) -> Result<String> {
+pub async fn sing_export(state: State<'_, SingState>, mix: Vec<MixPart>, path: String, ambience: Option<Ambience>, reverb: Option<f32>) -> Result<String> {
     let sing = state.0.clone();
     blocking(move || {
-        let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default()))?;
+        let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
         let title = sing.title();
         mix::export(Path::new(&path), &l, &r, crate::ds::render::SAMPLE_RATE, &title)?;
         Ok(path)
@@ -841,6 +843,7 @@ pub async fn sing_export_guides(
     ext: String,
     others_db: f32,
     ambience: Option<Ambience>,
+    reverb: Option<f32>,
 ) -> Result<Vec<String>> {
     let sing = state.0.clone();
     blocking(move || {
@@ -861,7 +864,7 @@ pub async fn sing_export_guides(
                     p
                 })
                 .collect();
-            let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience.unwrap_or_default()))?;
+            let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
             let path = Path::new(&dir).join(format!("{title} - {}.{ext}", file_safe(name)));
             mix::export(&path, &l, &r, crate::ds::render::SAMPLE_RATE, &format!("{} ({name})", sing.title()))?;
             written.push(path.to_string_lossy().into_owned());

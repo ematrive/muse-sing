@@ -124,6 +124,13 @@ pub struct Project {
     /// Room ambience of the mix (dry in projects saved before it existed).
     #[serde(default)]
     pub ambience: crate::fx::Ambience,
+    /// Amount of reverb, 0..1 (`fx::DEFAULT_AMOUNT` = the preset as designed).
+    #[serde(default = "default_reverb")]
+    pub reverb: f32,
+}
+
+fn default_reverb() -> f32 {
+    crate::fx::DEFAULT_AMOUNT
 }
 
 impl Project {
@@ -139,6 +146,7 @@ impl Project {
             accompaniment: AccompCfg { enabled: has_instruments, ..AccompCfg::default() },
             edits: HashMap::new(),
             ambience: crate::fx::Ambience::Chiesa,
+            reverb: crate::fx::DEFAULT_AMOUNT,
         }
     }
 }
@@ -249,6 +257,7 @@ mod tests {
         assert_eq!(p.pitch, "model");
         assert!(p.parts[0].sing && !p.accompaniment.enabled);
         assert_eq!(p.parts[0].voices, 1);
+        assert_eq!(p.reverb, crate::fx::DEFAULT_AMOUNT);
         assert_eq!(p.ambience, crate::fx::Ambience::Nessuno, "saved projects keep their dry sound");
         let n = Project::new("t", "s.mscz", Lang::It, vec![], false);
         assert_eq!(n.ambience, crate::fx::Ambience::Chiesa);

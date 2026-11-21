@@ -5,7 +5,7 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 ## Prossima versione
 
 ### Nuovo
-- **Ambiente:** riverbero di stanza, chiesa o cattedrale sul mix, in ascolto e nei file esportati. I progetti nuovi partono con «Chiesa», quelli già salvati restano secchi.
+- **Ambiente:** riverbero di stanza, chiesa o cattedrale sul mix, in ascolto e nei file esportati, con uno slider per la quantità. I progetti nuovi partono con «Chiesa», quelli già salvati restano secchi.
 - **Coristi per voce:** ogni voce può essere cantata da 2 o 3 coristi, con colori di voce diversi e piccole differenze di intonazione e attacco, così si sente una sezione del coro invece di un solista.
 - **Latino:** nuova lingua «Latino (ecclesiastico)» per i canti sacri, con la pronuncia all'italiana (*excelsis*, *agnus*, *gratia*, *caeli*…). Viene riconosciuta da sola dalle parole del testo e si canta con i cantanti italiani.
 - **Partiture MusicXML:** oltre ai `.mscz` si possono aprire file `.musicxml`, `.mxl` e `.xml`, esportati da Finale, Sibelius, Dorico, MuseScore o da programmi che leggono i PDF.

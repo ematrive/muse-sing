@@ -79,9 +79,18 @@ impl Allpass {
     }
 }
 
+/// How much reverb, from the UI: 0 = none, `DEFAULT_AMOUNT` = the preset as designed, 1 = twice
+/// as much.
+pub const DEFAULT_AMOUNT: f32 = 0.5;
+
 /// Adds the ambience to a stereo mix in place, lengthening it by the reverb tail.
-pub fn apply(l: &mut Vec<f32>, r: &mut Vec<f32>, sr: u32, ambience: Ambience) {
-    let Some(p) = ambience.preset() else { return };
+pub fn apply(l: &mut Vec<f32>, r: &mut Vec<f32>, sr: u32, ambience: Ambience, amount: f32) {
+    let Some(mut p) = ambience.preset() else { return };
+    let amount = amount.clamp(0.0, 1.0);
+    if amount <= 0.0 {
+        return;
+    }
+    p.wet *= amount / DEFAULT_AMOUNT;
     let scale = sr as f32 / 44100.0;
     let sz = |n: usize| ((n as f32) * scale).round() as usize;
     let tail = (p.tail_s * sr as f32) as usize;
@@ -126,7 +135,9 @@ mod tests {
     #[test]
     fn dry_is_untouched() {
         let (mut l, mut r) = (vec![0.5f32, 0.0, -0.5], vec![0.1f32, 0.2, 0.3]);
-        apply(&mut l, &mut r, 44100, Ambience::Nessuno);
+        apply(&mut l, &mut r, 44100, Ambience::Nessuno, DEFAULT_AMOUNT);
+        assert_eq!((&l, &r), (&vec![0.5, 0.0, -0.5], &vec![0.1, 0.2, 0.3]));
+        apply(&mut l, &mut r, 44100, Ambience::Chiesa, 0.0);
         assert_eq!((l, r), (vec![0.5, 0.0, -0.5], vec![0.1, 0.2, 0.3]));
     }
 
@@ -137,7 +148,7 @@ mod tests {
             let mut r = vec![0f32; 4410];
             l[0] = 1.0;
             r[0] = 1.0;
-            apply(&mut l, &mut r, 44100, amb);
+            apply(&mut l, &mut r, 44100, amb, DEFAULT_AMOUNT);
             assert!(l.len() > 4410 + 22050, "{amb:?}: a tail of at least half a second");
             assert!(l.iter().chain(&r).all(|x| x.is_finite() && x.abs() <= 1.0), "{amb:?}");
             let energy = |s: &[f32]| s.iter().map(|x| x * x).sum::<f32>();
@@ -147,5 +158,18 @@ mod tests {
             // the two sides differ (stereo spread)
             assert!(l[5000..6000] != r[5000..6000], "{amb:?}");
         }
+    }
+
+    #[test]
+    fn the_amount_scales_the_reverb() {
+        let tail = |amount: f32| {
+            let mut l = vec![0f32; 4410];
+            let mut r = vec![0f32; 4410];
+            l[0] = 1.0;
+            apply(&mut l, &mut r, 44100, Ambience::Chiesa, amount);
+            l[8000..20000].iter().map(|x| x * x).sum::<f32>()
+        };
+        let (a, b) = (tail(0.25), tail(1.0));
+        assert!((b / a - 16.0).abs() < 0.5, "four times the wet level, sixteen times the energy: {}", b / a);
     }
 }

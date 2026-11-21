@@ -41,6 +41,7 @@ import {
   projectApi,
   singApi,
   type Ambience,
+  type Room,
   type Lang,
   dictLang,
   type MixPart,
@@ -423,7 +424,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     return m;
   }, [project]);
   const ambience: Ambience = project?.ambience ?? "nessuno";
-  const mixKey = JSON.stringify([mix, ambience]);
+  const room: Room = { ambience, reverb: project?.reverb ?? 0.5 };
+  const mixKey = JSON.stringify([mix, room]);
   const missingSinger = sung.filter((p) => !singerOf(p));
   const notEngine = sung.filter((p) => singerOf(p) && !singerOf(p)!.engine);
   const rendering = renderJob !== null;
@@ -535,8 +537,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     async (from: number, range: [number, number] | null) => {
       setError(null);
       try {
-        const [m, amb] = JSON.parse(mixKey) as [MixPart[], Ambience];
-        const job = await singApi.play(m, from, range, amb);
+        const [m, rm] = JSON.parse(mixKey) as [MixPart[], Room];
+        const job = await singApi.play(m, from, range, rm);
         playJobRef.current = job;
         setPlay({ job, t: from, total: rendered?.seconds ?? 0 });
       } catch (e) {
@@ -601,7 +603,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     const path = /\.(mp3|flac|wav)$/i.test(out) ? out : `${out}.mp3`;
     setExporting(true);
     try {
-      const written = await singApi.export(mix, path, ambience);
+      const written = await singApi.export(mix, path, room);
       setNotice({ text: `Esportato: ${baseName(written)}`, path: written });
     } catch (e) {
       setError(errorText(e));
@@ -617,7 +619,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     if (typeof dir !== "string") return;
     setExporting(true);
     try {
-      const files = await singApi.exportGuides(mix, dir, "mp3", guideDb, ambience);
+      const files = await singApi.exportGuides(mix, dir, "mp3", guideDb, room);
       setNotice({ text: `Basi di studio: ${files.length} file MP3 in ${baseName(dir)}`, path: files[0] });
     } catch (e) {
       setError(errorText(e));
@@ -773,6 +775,24 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                   </option>
                 ))}
               </select>
+              {ambience !== "nessuno" && (
+                <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
+                  <span>Riverbero</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={Math.round(room.reverb * 100)}
+                    onChange={(e) => setProject((p) => ({ ...p, reverb: Number(e.target.value) / 100 }))}
+                    onDoubleClick={() => setProject((p) => ({ ...p, reverb: 0.5 }))}
+                    className="min-w-0 flex-1 accent-violet-600"
+                    aria-label="Quantità di riverbero"
+                    title="Doppio clic: valore normale"
+                  />
+                  <span className="w-9 text-right tabular-nums">{Math.round(room.reverb * 100)}%</span>
+                </div>
+              )}
             </div>
           </section>
 

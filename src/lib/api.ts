@@ -65,6 +65,8 @@ export type PartCfg = {
   voices: number;
 };
 export type Ambience = "nessuno" | "stanza" | "chiesa" | "cattedrale";
+/** Room ambience of the mix, as sent to playback and export. */
+export type Room = { ambience: Ambience; reverb: number };
 export const AMBIENCES: Record<Ambience, string> = { nessuno: "Nessuno (secco)", stanza: "Stanza", chiesa: "Chiesa", cattedrale: "Cattedrale" };
 export type AccompCfg = { enabled: boolean; volume_db: number; pan: number; mute: boolean; solo: boolean };
 export type Project = {
@@ -78,6 +80,8 @@ export type Project = {
   accompaniment: AccompCfg;
   edits: Record<string, PartEdits>;
   ambience: Ambience;
+  /** amount of reverb 0..1 (0.5 = as designed) */
+  reverb: number;
 };
 /** Curve points (tick, value): ticks of the written score, every CURVE_STEP; missing = default. */
 export type Curve = [number, number][];
@@ -153,13 +157,13 @@ export const singApi = {
   start: (req: RenderRequest) => invoke<number>("sing_start", { req }),
   cancel: () => invoke<void>("sing_cancel"),
   trackInfo: (part: string) => invoke<TrackInfo | null>("sing_track_info", { part }),
-  play: (mix: MixPart[], fromSec: number, loopRange: [number, number] | null, ambience: Ambience) =>
-    invoke<number>("sing_play", { mix, fromSec, loopRange, ambience }),
+  play: (mix: MixPart[], fromSec: number, loopRange: [number, number] | null, room: Room) =>
+    invoke<number>("sing_play", { mix, fromSec, loopRange, ...room }),
   stop: () => invoke<void>("sing_stop"),
-  export: (mix: MixPart[], path: string, ambience: Ambience) => invoke<string>("sing_export", { mix, path, ambience }),
+  export: (mix: MixPart[], path: string, room: Room) => invoke<string>("sing_export", { mix, path, ...room }),
   /** One file per sung part, that part in front and the others lowered by `othersDb`. */
-  exportGuides: (mix: MixPart[], dir: string, ext: string, othersDb: number, ambience: Ambience) =>
-    invoke<string[]>("sing_export_guides", { mix, dir, ext, othersDb, ambience }),
+  exportGuides: (mix: MixPart[], dir: string, ext: string, othersDb: number, room: Room) =>
+    invoke<string[]>("sing_export_guides", { mix, dir, ext, othersDb, ...room }),
 };
 
 export const LANGS: Record<Lang, string> = { it: "Italiano", en: "English", la: "Latino (ecclesiastico)" };

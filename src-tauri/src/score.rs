@@ -38,10 +38,20 @@ pub struct Note {
     pub lyric: Option<Lyric>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tone {
+    pub start: Beats,
+    pub dur: Beats,
+    pub pitch: i32,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct Part {
     pub name: String,
+    /// The melody: first voice, top note of each chord (what is sung).
     pub notes: Vec<Note>,
+    /// Every note of every voice, chords included, ties merged: what an instrument plays.
+    pub tones: Vec<Tone>,
 }
 
 impl Part {
@@ -356,6 +366,9 @@ pub(crate) fn assemble(
             name = format!("{name} ({})", staff.id);
         }
         let mut notes: Vec<(Note, bool)> = vec![];
+        let mut tones: Vec<Tone> = vec![];
+        // last tone of each pitch, to merge ties
+        let mut last_tone: HashMap<i32, usize> = HashMap::new();
         let mut mstart: Beats = Ratio::from_integer(0);
         let mut played: HashMap<usize, u32> = HashMap::new();
         for &(mi, pass) in &order {
@@ -381,6 +394,18 @@ pub(crate) fn assemble(
                     let id = format!("{}.{occurrence}.{off}", mi + 1);
                     notes.push((Note { id, start: mstart + n.offset, dur: n.dur, pitch: n.pitch, lyric }, n.tie_prev));
                 }
+                for t in &m.tones {
+                    let start = mstart + t.offset;
+                    if t.tie_prev
+                        && let Some(&k) = last_tone.get(&t.pitch)
+                        && tones[k].start + tones[k].dur == start
+                    {
+                        tones[k].dur += t.dur;
+                        continue;
+                    }
+                    last_tone.insert(t.pitch, tones.len());
+                    tones.push(Tone { start, dur: t.dur, pitch: t.pitch });
+                }
             }
             mstart += lens[mi];
         }
@@ -392,7 +417,10 @@ pub(crate) fn assemble(
             }
             merged.push(n);
         }
-        parts.push(Part { name, notes: merged });
+        // the same pitch struck twice at once (two voices sharing a note): one, the longer
+        tones.sort_by(|a, b| a.start.cmp(&b.start).then(a.pitch.cmp(&b.pitch)).then(b.dur.cmp(&a.dur)));
+        tones.dedup_by(|b, a| a.start == b.start && a.pitch == b.pitch);
+        parts.push(Part { name, notes: merged, tones });
     }
     // tempo marks of the other staves (rare): keep the first staff's, add the missing ones
     if tempos.is_empty() {
@@ -477,9 +505,18 @@ pub(crate) struct NoteData {
     pub lyrics: BTreeMap<i32, Lyric>,
 }
 
+/// One sounding pitch of a measure (any voice, any note of a chord).
+pub(crate) struct ToneData {
+    pub offset: Beats,
+    pub dur: Beats,
+    pub pitch: i32,
+    pub tie_prev: bool,
+}
+
 pub(crate) struct MeasureData {
     pub len: Beats,
     pub notes: Vec<NoteData>,
+    pub tones: Vec<ToneData>,
     /// (offset in the measure, quarter notes per second)
     pub tempos: Vec<(Beats, f64)>,
     pub structure: Structure,
@@ -500,6 +537,7 @@ fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<
     let mut notes = vec![];
     let mut tempos = vec![];
     let mut time_sig = None;
+    let mut tones: Vec<ToneData> = vec![];
     let mut mlen: Option<Beats> = None;
     let zero: Beats = Ratio::from_integer(0);
     for (vi, voice) in meas.children().filter(|c| c.has_tag_name("voice")).enumerate() {
@@ -578,6 +616,12 @@ fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<
                             };
                             lyrics.insert(no, Lyric { text: child(l, "text").map(all_text).unwrap_or_default(), syllabic });
                         }
+                        for n in note_els.iter().filter(|n| child_text(**n, "play") != Some("0")) {
+                            if let Some(pitch) = child_text(*n, "pitch").and_then(|p| p.parse::<i32>().ok()) {
+                                let tie_prev = n.children().any(|s| s.has_tag_name("Spanner") && s.attribute("type") == Some("Tie") && child(s, "prev").is_some());
+                                tones.push(ToneData { offset: pos, dur: ln, pitch, tie_prev });
+                            }
+                        }
                         if vi == 0 && !silent && !note_els.is_empty() {
                             let pitch = note_els
                                 .iter()
@@ -603,7 +647,7 @@ fn read_measure(meas: Node, staff_name: &str, lyrics_other_voice: &mut BTreeSet<
     if let Some(l) = meas.attribute("len").and_then(ratio) {
         mlen = Some(l * 4);
     }
-    MeasureData { len: mlen.unwrap_or(zero), notes, tempos, structure: st, time_sig, number: None }
+    MeasureData { len: mlen.unwrap_or(zero), notes, tones, tempos, structure: st, time_sig, number: None }
 }
 
 /// Measures in playback order, each with its pass number through the current repeat (1-based,

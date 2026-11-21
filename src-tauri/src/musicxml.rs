@@ -9,7 +9,7 @@ use num_rational::Ratio;
 use roxmltree::{Document, Node};
 
 use crate::error::{Error, Result};
-use crate::score::{assemble, Beats, Lyric, MeasureData, NoteData, Score, StaffData, Structure, Syllabic};
+use crate::score::{assemble, Beats, Lyric, MeasureData, NoteData, Score, StaffData, Structure, Syllabic, ToneData};
 
 fn child<'a, 'i>(n: Node<'a, 'i>, tag: &str) -> Option<Node<'a, 'i>> {
     n.children().find(|c| c.has_tag_name(tag))
@@ -225,6 +225,7 @@ fn read_part(
     for (mi, meas) in part.children().filter(|c| c.has_tag_name("measure")).enumerate() {
         let mut st = Structure::default();
         let mut notes: Vec<Vec<NoteData>> = (0..n_staves).map(|_| vec![]).collect();
+        let mut tones: Vec<Vec<ToneData>> = (0..n_staves).map(|_| vec![]).collect();
         let mut tempos: Vec<(Beats, f64)> = vec![];
         let mut time_sig = None;
         // a pickup or a split measure (implicit) is left out of the count
@@ -342,9 +343,12 @@ fn read_part(
                         Some((octave + 1) * 12 + step + alter.round() as i32)
                     });
                     let cue = child(el, "cue").is_some();
+                    let tie_prev = el.children().any(|c| c.has_tag_name("tie") && c.attribute("type") == Some("stop"))
+                        || child(el, "notations").is_some_and(|n| n.children().any(|c| c.has_tag_name("tied") && c.attribute("type") == Some("stop")));
+                    if !cue && let Some(pitch) = pitch {
+                        tones[staff].push(ToneData { offset: start, dur, pitch, tie_prev });
+                    }
                     if first && !cue && let Some(pitch) = pitch {
-                        let tie_prev = el.children().any(|c| c.has_tag_name("tie") && c.attribute("type") == Some("stop"))
-                            || child(el, "notations").is_some_and(|n| n.children().any(|c| c.has_tag_name("tied") && c.attribute("type") == Some("stop")));
                         match (is_chord, last[staff]) {
                             // another note of the same chord: the top one is sung, as in MuseScore
                             (true, Some(k)) => {
@@ -371,8 +375,8 @@ fn read_part(
         }
         let nominal: Beats = Ratio::new(sig.0 as i64 * 4, sig.1.max(1) as i64);
         let len = if max_pos > zero { max_pos } else { nominal };
-        for (s, staff_notes) in notes.into_iter().enumerate() {
-            out[s].push(MeasureData { len, notes: staff_notes, tempos: tempos.clone(), structure: st.clone(), time_sig, number: number.clone() });
+        for (s, (staff_notes, staff_tones)) in notes.into_iter().zip(tones).enumerate() {
+            out[s].push(MeasureData { len, notes: staff_notes, tones: staff_tones, tempos: tempos.clone(), structure: st.clone(), time_sig, number: number.clone() });
         }
     }
     if open_ending.is_some() {
@@ -488,6 +492,12 @@ mod tests {
             ]
         );
         assert_eq!(p.notes[3].dur, Ratio::from_integer(2), "tie merged");
+        // what an instrument plays: both notes of the chord, ties merged too
+        let tones: Vec<(String, i32, String)> = p.tones.iter().map(|t| (format!("{}", t.start), t.pitch, format!("{}", t.dur))).collect();
+        let t = |s: &str, p: i32, d: &str| (s.to_string(), p, d.to_string());
+        assert!(tones.contains(&t("3", 65, "2")) && tones.contains(&t("9", 65, "1")), "{tones:?}");
+        assert!(tones.contains(&t("10", 69, "2")) && tones.contains(&t("10", 72, "2")), "{tones:?}");
+        assert_eq!(tones.len(), 10, "{tones:?}");
         assert_eq!(p.notes[0].id, "1.1.0");
         assert_eq!(p.notes[5].id, "2.2.0");
         let bars: Vec<BarRow> =

@@ -54,7 +54,7 @@ pub fn phrase_secs(ph: &Phrase) -> f64 {
 // Synthesis
 
 /// Adds a soft piano-like tone of `dur` seconds at `t0`.
-fn add_tone(buf: &mut [f32], sr: f64, t0: f64, dur: f64, pitch: i32, gain: f32) {
+pub(crate) fn add_tone(buf: &mut [f32], sr: f64, t0: f64, dur: f64, pitch: i32, gain: f32) {
     let f = midi_hz(pitch);
     let i0 = (t0 * sr) as usize;
     let len = ((dur + 0.06) * sr) as usize;
@@ -72,7 +72,7 @@ fn add_tone(buf: &mut [f32], sr: f64, t0: f64, dur: f64, pitch: i32, gain: f32) 
     }
 }
 
-fn add_click(buf: &mut [f32], sr: f64, t0: f64, accent: bool) {
+pub(crate) fn add_click(buf: &mut [f32], sr: f64, t0: f64, accent: bool) {
     let f = if accent { 1600.0 } else { 1000.0 };
     let i0 = (t0 * sr) as usize;
     for i in 0..(0.04 * sr) as usize {

@@ -29,6 +29,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ACCOMPANIMENT,
   AMBIENCES,
+  INSTRUMENTS,
+  instrumentFor,
+  METRONOME,
+  SOUNDFONT_EVENT,
   api,
   isProjectPath,
   isScorePath,
@@ -41,6 +45,7 @@ import {
   projectApi,
   singApi,
   type Ambience,
+  type Instrument,
   type Room,
   type Lang,
   dictLang,
@@ -236,6 +241,27 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     }
   }, [loadSingers]);
 
+  const [sfInstalled, setSfInstalled] = useState(false);
+  const [sfProgress, setSfProgress] = useState<TigerProgress | null>(null);
+  useEffect(() => {
+    api.soundfontInstalled().then(setSfInstalled, () => {});
+  }, []);
+  const installSoundfont = useCallback(async () => {
+    setError(null);
+    setSfProgress({ phase: "download", done: 0, total: 0 });
+    const un = await listen<TigerProgress>(SOUNDFONT_EVENT, (e) => setSfProgress(e.payload));
+    try {
+      await api.installSoundfont();
+      setSfInstalled(true);
+      setNotice({ text: "Strumenti installati: genera di nuovo l'audio per sentirli." });
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      un();
+      setSfProgress(null);
+    }
+  }, []);
+
   const loadRecent = useCallback(() => {
     projectApi.recent().then(setRecent, () => {});
   }, []);
@@ -410,10 +436,14 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const singerOf = (p: PartCfg) => singers?.singers.find((s) => s.id === p.singer);
   const hasInstruments = !!analysis?.parts.some((p) => !p.sung);
   const accompOn = !!project?.accompaniment.enabled && hasInstruments;
-  const renderParts = sung.map((p) => ({ name: p.name, singer: p.singer, color: p.color, voices: p.voices ?? 1 }));
+  const voiced = sung.filter((p) => !p.played);
+  const renderParts = sung.map((p) => ({ name: p.name, singer: p.singer, color: p.color, voices: p.voices ?? 1, played: !!p.played }));
+  const instrumentParts = (analysis?.parts ?? []).filter((p) => !p.sung).map((p) => p.name);
+  const instrumentOf = (name: string): Instrument => project?.instruments?.[name] ?? instrumentFor(name);
+  const renderInstruments: Record<string, Instrument> = Object.fromEntries(instrumentParts.map((n) => [n, instrumentOf(n)]));
   const renderEdits: Record<string, PartEdits> = Object.fromEntries(sung.filter((p) => project?.edits[p.name]).map((p) => [p.name, project!.edits[p.name]]));
   const sig =
-    project && opened ? JSON.stringify([opened.score_path, project.lang, project.pitch, project.tempo_factor, accompOn, renderParts, renderEdits]) : "";
+    project && opened ? JSON.stringify([opened.score_path, project.lang, project.pitch, project.tempo_factor, accompOn, renderParts, renderEdits, renderInstruments, sfInstalled]) : "";
   sigRef.current = sig;
   const upToDate = !!rendered && rendered.sig === sig;
   const mix: MixPart[] = useMemo(() => {
@@ -421,13 +451,16 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     const m: MixPart[] = project.parts.filter((p) => p.sing).map(({ name, volume_db, pan, mute, solo }) => ({ name, volume_db, pan, mute, solo }));
     const a = project.accompaniment;
     m.push({ name: ACCOMPANIMENT, volume_db: a.volume_db, pan: a.pan, mute: a.mute, solo: a.solo });
+    const k = project.metronome ?? { enabled: false, volume_db: -6, pan: 0, mute: false, solo: false };
+    m.push({ name: METRONOME, volume_db: k.volume_db, pan: k.pan, mute: k.mute || !k.enabled, solo: k.enabled && k.solo });
     return m;
   }, [project]);
   const ambience: Ambience = project?.ambience ?? "nessuno";
   const room: Room = { ambience, reverb: project?.reverb ?? 0.5 };
-  const mixKey = JSON.stringify([mix, room]);
-  const missingSinger = sung.filter((p) => !singerOf(p));
-  const notEngine = sung.filter((p) => singerOf(p) && !singerOf(p)!.engine);
+  const countIn = !!project?.count_in;
+  const mixKey = JSON.stringify([mix, room, countIn]);
+  const missingSinger = voiced.filter((p) => !singerOf(p));
+  const notEngine = voiced.filter((p) => singerOf(p) && !singerOf(p)!.engine);
   const rendering = renderJob !== null;
   const diffsinger = (singers?.singers ?? []).filter((s) => s.singer_type === "diffsinger");
   const total = rendered?.seconds ?? 0;
@@ -519,6 +552,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
         tempo_factor: project.tempo_factor,
         accompaniment: accompOn,
         edits: renderEdits,
+        instruments: renderInstruments,
       });
       renderJobRef.current = job;
       setRenderJob(job);
@@ -537,8 +571,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     async (from: number, range: [number, number] | null) => {
       setError(null);
       try {
-        const [m, rm] = JSON.parse(mixKey) as [MixPart[], Room];
-        const job = await singApi.play(m, from, range, rm);
+        const [m, rm, ci] = JSON.parse(mixKey) as [MixPart[], Room, boolean];
+        const job = await singApi.play(m, from, range, rm, ci);
         playJobRef.current = job;
         setPlay({ job, t: from, total: rendered?.seconds ?? 0 });
       } catch (e) {
@@ -619,7 +653,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     if (typeof dir !== "string") return;
     setExporting(true);
     try {
-      const files = await singApi.exportGuides(mix, dir, "mp3", guideDb, room);
+      const files = await singApi.exportGuides(mix, dir, "mp3", guideDb, room, countIn);
       setNotice({ text: `Basi di studio: ${files.length} file MP3 in ${baseName(dir)}`, path: files[0] });
     } catch (e) {
       setError(errorText(e));
@@ -856,47 +890,63 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                       </div>
                       <div className="flex shrink-0 gap-1.5">
                         <select
-                          className="field w-52 py-1"
-                          value={p.singer}
-                          disabled={!p.sing || rendering}
-                          onChange={(e) => setPart(p.name, { singer: e.target.value, color: null })}
-                          aria-label={`Cantante di ${p.name}`}
-                        >
-                          <option value="">— cantante —</option>
-                          {diffsinger.map((x) => (
-                            <option key={x.id} value={x.id} disabled={!x.engine}>
-                              {singerLabel(x, project.lang)}
-                            </option>
-                          ))}
-                        </select>
-                        {s && s.colors.length > 1 && (
-                          <select
-                            className="field w-32 py-1"
-                            value={p.color ?? ""}
-                            disabled={!p.sing || rendering}
-                            onChange={(e) => setPart(p.name, { color: e.target.value || null })}
-                            title="Colore di voce"
-                            aria-label={`Colore di voce di ${p.name}`}
-                          >
-                            {s.colors.map((col, i) => (
-                              <option key={col} value={i === 0 ? "" : col}>
-                                {col}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <select
                           className="field w-28 py-1"
-                          value={p.voices ?? 1}
+                          value={p.played ? "suona" : "canta"}
                           disabled={!p.sing || rendering}
-                          onChange={(e) => setPart(p.name, { voices: Number(e.target.value) })}
-                          title="Più coristi sulla stessa voce, ognuno con un colore diverso: suona come una sezione del coro. La generazione dura di più."
-                          aria-label={`Coristi di ${p.name}`}
+                          onChange={(e) => setPart(p.name, { played: e.target.value === "suona" })}
+                          title="«Suonata»: la voce è suonata al pianoforte invece che cantata, per imparare le note"
+                          aria-label={`Cantata o suonata: ${p.name}`}
                         >
-                          <option value={1}>1 corista</option>
-                          <option value={2}>2 coristi</option>
-                          <option value={3}>3 coristi</option>
+                          <option value="canta">Cantata</option>
+                          <option value="suona">Suonata</option>
                         </select>
+                        {!p.played && (
+                          <>
+                            <select
+                              className="field w-52 py-1"
+                              value={p.singer}
+                              disabled={!p.sing || rendering}
+                              onChange={(e) => setPart(p.name, { singer: e.target.value, color: null })}
+                              aria-label={`Cantante di ${p.name}`}
+                            >
+                              <option value="">— cantante —</option>
+                              {diffsinger.map((x) => (
+                                <option key={x.id} value={x.id} disabled={!x.engine}>
+                                  {singerLabel(x, project.lang)}
+                                </option>
+                              ))}
+                            </select>
+                            {s && s.colors.length > 1 && (
+                              <select
+                                className="field w-32 py-1"
+                                value={p.color ?? ""}
+                                disabled={!p.sing || rendering}
+                                onChange={(e) => setPart(p.name, { color: e.target.value || null })}
+                                title="Colore di voce"
+                                aria-label={`Colore di voce di ${p.name}`}
+                              >
+                                {s.colors.map((col, i) => (
+                                  <option key={col} value={i === 0 ? "" : col}>
+                                    {col}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            <select
+                              className="field w-28 py-1"
+                              value={p.voices ?? 1}
+                              disabled={!p.sing || rendering}
+                              onChange={(e) => setPart(p.name, { voices: Number(e.target.value) })}
+                              title="Più coristi sulla stessa voce, ognuno con un colore diverso: suona come una sezione del coro. La generazione dura di più."
+                              aria-label={`Coristi di ${p.name}`}
+                            >
+                              <option value={1}>1 corista</option>
+                              <option value={2}>2 coristi</option>
+                              <option value={3}>3 coristi</option>
+                            </select>
+                          </>
+                        )}
+                        {p.played && <span className="self-center px-2 text-xs text-zinc-500">al pianoforte{sfInstalled ? "" : " (suono semplice)"}</span>}
                       </div>
                     </div>
                     {p.sing && (
@@ -923,9 +973,40 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                       <div className="font-medium">
                         Accompagnamento{" "}
                         <span className="font-normal text-zinc-500">
-                          · {analysis.parts.filter((x) => !x.sung).map((x) => x.name).join(", ")} con suono d'organo
+                          · {sfInstalled ? "le parti strumentali" : `${instrumentParts.join(", ")} con suono d'organo semplice`}
                         </span>
                       </div>
+                      {sfInstalled ? (
+                        project.accompaniment.enabled && (
+                          <div className="mt-1.5 flex flex-wrap gap-2">
+                            {instrumentParts.map((name) => (
+                              <label key={name} className="flex items-center gap-1.5 text-xs text-zinc-500">
+                                {name}
+                                <select
+                                  className="field w-40 py-0.5"
+                                  value={instrumentOf(name)}
+                                  disabled={rendering}
+                                  onChange={(e) => setProject((p) => ({ ...p, instruments: { ...(p.instruments ?? {}), [name]: e.target.value as Instrument } }))}
+                                  aria-label={`Strumento di ${name}`}
+                                >
+                                  {Object.entries(INSTRUMENTS).map(([k, v]) => (
+                                    <option key={k} value={k}>
+                                      {v}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            ))}
+                          </div>
+                        )
+                      ) : (
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                          <button className="btn py-0.5 text-xs" onClick={installSoundfont} disabled={!!sfProgress || rendering}>
+                            {sfProgress ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Scarica strumenti veri
+                          </button>
+                          {sfProgress ? tigerText(sfProgress) : "organo a canne, pianoforte, archi… (31 MB, GeneralUser GS)"}
+                        </div>
+                      )}
                     </div>
                   </div>
                   {project.accompaniment.enabled && (
@@ -941,6 +1022,33 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                   )}
                 </div>
               )}
+              <div className="py-2.5">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 accent-violet-600"
+                    checked={!!project.metronome?.enabled}
+                    onChange={() => setProject((p) => ({ ...p, metronome: { ...p.metronome, enabled: !p.metronome?.enabled } }))}
+                    aria-label="Metronomo"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">
+                      Metronomo <span className="font-normal text-zinc-500">· un colpo per battito, più forte sul primo della battuta</span>
+                    </div>
+                  </div>
+                </div>
+                {project.metronome?.enabled && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 pl-7 text-xs text-zinc-500">
+                    <MixControls
+                      volume={project.metronome.volume_db}
+                      pan={project.metronome.pan}
+                      mute={project.metronome.mute}
+                      solo={project.metronome.solo}
+                      onChange={(patch) => setProject((p) => ({ ...p, metronome: { ...p.metronome, ...patch } }))}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 
@@ -992,6 +1100,10 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                   <button className="btn" onClick={() => (play ? stopPlay() : startPlay(loop && (cursor < loop[0] || cursor > loop[1]) ? loop[0] : cursor, loop))}>
                     {play ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />} {play ? "Ferma" : "Ascolta"}
                   </button>
+                  <label className="flex items-center gap-1.5 text-xs text-zinc-500" title="Una battuta di colpi prima di partire, con l'accordo di partenza (non quando ripeti un tratto)">
+                    <input type="checkbox" className="accent-violet-600" checked={countIn} onChange={() => setProject((p) => ({ ...p, count_in: !p.count_in }))} />
+                    conteggio
+                  </label>
                   <input
                     type="range"
                     min={0}
@@ -1089,7 +1201,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
           {roll && rendered && sung.length > 0 && (
             <section className="card">
               <Editor
-                parts={sung.map((p) => p.name)}
+                parts={voiced.map((p) => p.name)}
                 roll={roll}
                 edits={project.edits}
                 initialPart={mine}

@@ -112,7 +112,7 @@ function opened(path: string | null) {
   if (!an) throw "Anteprima senza partiture: mancano src/preview-santo.json e src/preview-sonnet.json";
   const parts = an.parts
     .filter((p) => p.sung)
-    .map((p) => ({ name: p.name, sing: true, singer: "", color: null, volume_db: 0, pan: 0, mute: false, solo: false, voices: 1 }));
+    .map((p) => ({ name: p.name, sing: true, singer: "", color: null, volume_db: 0, pan: 0, mute: false, solo: false, voices: 1, played: false }));
   return {
     project: {
       version: 1,
@@ -126,6 +126,9 @@ function opened(path: string | null) {
       edits: {},
       ambience: "chiesa",
       reverb: 0.5,
+      instruments: {},
+      metronome: { enabled: false, volume_db: -6, pan: 0, mute: false, solo: false },
+      count_in: false,
     },
     path,
     score_path: "/tmp/cache/projects/0123.mscz",
@@ -211,6 +214,8 @@ mockIPC(
       if (!a) throw "Anteprima senza partiture: mancano src/preview-santo.json e src/preview-sonnet.json";
       return a;
     }
+    if (cmd === "soundfont_installed") return q.get("sf") === "1";
+    if (cmd === "install_soundfont") return "/tmp/GeneralUser-GS.sf2";
     if (cmd === "install_tiger") return "/Users/utente/Library/Application Support/app.musesing.desktop/Singers/Tiger";
     if (cmd === "list_singers")
       return {

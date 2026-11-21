@@ -23,6 +23,21 @@ export. Muse Sing's complete source code is public, so the application can be re
 and relinked with a modified LAME as the LGPL requires.
 
 --------------------------------------------------------------------------------
+RustySynth — https://github.com/sinshu/rustysynth
+MIT License, Copyright (c) Nobuaki Tanaka
+
+SoundFont synthesizer for the instruments, linked through the rustysynth crate.
+
+--------------------------------------------------------------------------------
+GeneralUser GS v2.0.3 — https://www.schristiancollins.com/generaluser
+by S. Christian Collins, GeneralUser GS License v2.0
+
+The instruments' SoundFont is not part of the application: it is downloaded on request
+from a copy kept with Muse Sing's releases (tag soundfont-1), together with its licence.
+"You may use GeneralUser GS without restriction for your own music creation, private or
+commercial ... Please feel free to use it in your software projects."
+
+--------------------------------------------------------------------------------
 ONNX Runtime — https://github.com/microsoft/onnxruntime
 MIT License, Copyright (c) Microsoft Corporation
 

@@ -6,6 +6,7 @@ pub mod ds;
 pub mod edits;
 pub mod error;
 pub mod fx;
+pub mod instruments;
 pub mod latin;
 pub mod lyrics;
 pub mod mix;
@@ -37,6 +38,8 @@ pub fn run() {
             commands::analyze,
             commands::list_singers,
             commands::install_tiger,
+            commands::soundfont_installed,
+            commands::install_soundfont,
             commands::voice_recent,
             commands::voice_create,
             commands::voice_open,

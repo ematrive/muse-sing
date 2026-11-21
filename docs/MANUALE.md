@@ -65,12 +65,15 @@ Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo rico
 - **Voci:** spunta quelle da cantare e scegli il **cantante** di ognuna. Se il cantante ha più colori di voce (Tiger ne ha diversi), accanto compare la scelta del colore. Muse Sing ricorda il cantante di ogni voce (Soprano, Tenore…) da un brano all'altro.
 - **Coristi:** con 2 o 3 coristi la voce è cantata da una piccola sezione invece che da un solista: ogni corista ha un altro colore di voce e canta in modo leggermente diverso, come in un coro vero. La generazione dura 2 o 3 volte tanto (le voci già generate si riusano).
 - **La mia voce:** il pulsante accanto al nome evidenzia quella voce nel rullo.
-- **Accompagnamento:** se la partitura ha parti senza testo (organo, pianoforte), Muse Sing le suona con un suono d'organo semplice. Si attiva o disattiva con la casella.
+- **Cantata o suonata:** ogni voce può essere **suonata** al pianoforte invece che cantata, per imparare le note senza le parole. È istantanea e non serve un cantante.
+- **Accompagnamento:** se la partitura ha parti senza testo (organo, pianoforte), Muse Sing le suona tutte, accordi compresi. Si attiva o disattiva con la casella. All'inizio suona un organo semplice; con **Scarica strumenti veri** (31 MB, una volta sola) Muse Sing scarica gli strumenti di GeneralUser GS e puoi scegliere per ogni parte organo a canne, armonium, pianoforte, archi, flauto, chitarra o arpa. Lo strumento proposto dipende dal nome della parte. Dopo il download o un cambio di strumento serve **Genera audio** (le voci già cantate si riusano, quindi è veloce).
+- **Metronomo:** con la casella si sente un colpo per ogni battito, più forte sul primo della battuta; nei 6/8, 9/8 e 12/8 batte le semiminime puntate. Ha volume e pan come le altre tracce e si accende o spegne senza rigenerare.
 
 ### Generare e ascoltare
 
 1. Premi **Genera audio**. Il Mac calcola le voci una dopo l'altra: per un brano di 3-4 minuti con quattro voci servono alcuni minuti. Puoi annullare; la frase in corso finisce prima di fermarsi.
 2. Premi **Ascolta**. Con la barra o con un clic sul rullo scegli da dove partire; durante l'ascolto il rullo scorre con la linea rossa. Il righello in cima mostra le battute con gli stessi numeri della partitura (anche nei ritornelli, dove i numeri si ripetono), e in viola il metro dove cambia.
+   Con **conteggio** acceso, prima di partire si sente una battuta di colpi al tempo del punto di partenza (due battute nei tempi in 6/8), con l'accordo delle voci sotto gli ultimi due colpi. Non vale quando ripeti un tratto.
 3. **Ripetere un tratto:** trascina sul righello in cima al rullo per scegliere un tratto, che si colora di giallo: l'ascolto lo ripete finché non premi Ferma. La × accanto al tratto, sopra, lo toglie.
 4. **Mix** di ogni voce e dell'accompagnamento: volume, posizione a sinistra o a destra (pan), «muta» per escluderla, «solo» per sentire solo le tracce con «solo» acceso. Le modifiche si sentono subito, senza rigenerare. Doppio clic su un cursore lo riporta a zero.
 
@@ -103,7 +106,7 @@ Nota: l'intonazione naturale la sceglie il modello del cantante, che ogni volta 
 ### Esportare
 
 - **Esporta…:** il brano con il mix che senti, in MP3 (per il telefono), FLAC (senza perdita di qualità) o WAV.
-- **Basi di studio…:** scegli una cartella e Muse Sing crea un MP3 per ogni voce (*Santo - Soprano.mp3*, *Santo - Contralto.mp3*…), con quella voce in primo piano e le altre più basse (di quanto, lo scegli accanto: −10 dB è un buon inizio). L'accompagnamento resta come nel mix. Sono le classiche basi da mandare al coro.
+- **Basi di studio…:** scegli una cartella e Muse Sing crea un MP3 per ogni voce (*Santo - Soprano.mp3*, *Santo - Contralto.mp3*…), con quella voce in primo piano e le altre più basse (di quanto, lo scegli accanto: −10 dB è un buon inizio). L'accompagnamento resta come nel mix. Con **conteggio** acceso, ogni base comincia con la battuta di conteggio. Sono le classiche basi da mandare al coro.
 
 ### Ritornelli e salti
 

@@ -35,10 +35,12 @@ fn renders_mixes_and_reuses_the_cache() {
         path: score.to_string_lossy().into_owned(),
         lang: Lang::It,
         pitch: "notes".into(),
-        parts: vec![PartReq { name: "Soprano".into(), singer: "test".into(), color: None, voices: 1 }],
+        parts: vec![PartReq { name: "Soprano".into(), singer: "test".into(), color: None, voices: 1, played: false }],
         tempo_factor: 1.0,
         accompaniment: false,
         edits: Default::default(),
+        instruments: Default::default(),
+        soundfont: None,
     };
     let t = std::time::Instant::now();
     let job = sing.begin();
@@ -119,6 +121,8 @@ fn accompaniment_and_slower_tempo() {
             tempo_factor,
             accompaniment: true,
             edits: Default::default(),
+            instruments: Default::default(),
+            soundfont: None,
         };
         let job = sing.begin();
         sing.run(job, &req, &[], &|_| {}).unwrap().expect("not cancelled").1
@@ -168,10 +172,12 @@ fn edits_render_only_what_changed() {
             path: score.to_string_lossy().into_owned(),
             lang: Lang::It,
             pitch: "model".into(),
-            parts: vec![PartReq { name: part.into(), singer: "test".into(), color: None, voices: 1 }],
+            parts: vec![PartReq { name: part.into(), singer: "test".into(), color: None, voices: 1, played: false }],
             tempo_factor,
             accompaniment: false,
             edits: std::collections::HashMap::from([(part.to_string(), edits)]),
+            instruments: Default::default(),
+            soundfont: None,
         };
         let job = sing.begin();
         sing.run(job, &req, std::slice::from_ref(&singer), &|_| {}).unwrap().expect("not cancelled");
@@ -265,10 +271,12 @@ fn edits_render_only_what_changed() {
         path: score.to_string_lossy().into_owned(),
         lang: Lang::It,
         pitch: "model".into(),
-        parts: vec![PartReq { name: part.into(), singer: "test".into(), color: None, voices: 1 }],
+        parts: vec![PartReq { name: part.into(), singer: "test".into(), color: None, voices: 1, played: false }],
         tempo_factor: 1.0,
         accompaniment: false,
         edits: std::collections::HashMap::from([(part.to_string(), e)]),
+        instruments: Default::default(),
+        soundfont: None,
     };
     let job = sing.begin();
     let (warnings, _) = sing.run(job, &req, std::slice::from_ref(&singer), &|_| {}).unwrap().unwrap();

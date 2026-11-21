@@ -37,7 +37,7 @@ pub async fn download(url: &str, dest: &Path, mut on: impl FnMut(Progress)) -> R
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::ring::default_provider().install_default();
     }
-    let net = |e: reqwest::Error| Error::Other(format!("download di Tiger non riuscito: {e}"));
+    let net = |e: reqwest::Error| Error::Other(format!("download non riuscito: {e}"));
     let client = reqwest::Client::builder().user_agent(concat!("MuseSing/", env!("CARGO_PKG_VERSION"))).build().map_err(net)?;
     let mut resp = client.get(url).send().await.map_err(net)?.error_for_status().map_err(net)?;
     let total = resp.content_length().unwrap_or(0);
@@ -57,7 +57,7 @@ pub async fn download(url: &str, dest: &Path, mut on: impl FnMut(Progress)) -> R
     drop(file);
     if total > 0 && done != total {
         let _ = std::fs::remove_file(&part);
-        return Err(Error::Other("download di Tiger interrotto: riprova".into()));
+        return Err(Error::Other("download interrotto: riprova".into()));
     }
     std::fs::rename(&part, dest)?;
     on(Progress { phase: Phase::Download, done, total: done });

@@ -3,6 +3,7 @@
 //!
 //!   cargo run --release --example sing_mix -- <score> <voicebank dir> <out.mp3>
 //!       [--voices 1|2|3] [--ambience nessuno|stanza|chiesa|cattedrale] [--reverb 0..1] [--color COLOR] [--no-accomp]
+//!       [--soundfont GeneralUser-GS.sf2] [--instrument organo_canne|pianoforte|archi|…] [--metronome] [--played PART]
 use std::path::PathBuf;
 
 use muse_sing_lib::fx::Ambience;
@@ -17,7 +18,7 @@ fn main() {
     let pos: Vec<&String> = {
         let (mut v, mut i) = (vec![], 0);
         while i < args.len() {
-            if args[i] == "--no-accomp" {
+            if ["--no-accomp", "--metronome"].contains(&args[i].as_str()) {
                 i += 1
             } else if args[i].starts_with("--") {
                 i += 2
@@ -53,10 +54,18 @@ fn main() {
         path: score.to_string_lossy().into_owned(),
         lang,
         pitch: "model".into(),
-        parts: sung.iter().map(|n| PartReq { name: n.clone(), singer: "vb".into(), color: opt("--color"), voices }).collect(),
+        parts: sung.iter().map(|n| PartReq { name: n.clone(), singer: "vb".into(), color: opt("--color"), voices, played: opt("--played").as_deref() == Some(n.as_str()) }).collect(),
         tempo_factor: 1.0,
         accompaniment: !args.iter().any(|a| a == "--no-accomp"),
         edits: Default::default(),
+        instruments: match opt("--instrument") {
+            Some(i) => {
+                let inst: muse_sing_lib::instruments::Instrument = serde_json::from_str(&format!("\"{i}\"")).expect("instrument");
+                sc.parts.iter().filter(|p| !p.is_sung()).map(|p| (p.name.clone(), inst)).collect()
+            }
+            None => Default::default(),
+        },
+        soundfont: opt("--soundfont").map(PathBuf::from),
     };
     let cache = std::env::temp_dir().join("muse-sing-mix-cache");
     let sing = Sing::new(Some(cache));
@@ -76,8 +85,9 @@ fn main() {
         .unwrap()
         .into_iter()
         .map(|name| {
-            let accomp = name == muse_sing_lib::project::ACCOMPANIMENT;
-            MixPart { name, volume_db: if accomp { -6.0 } else { 0.0 }, pan: 0.0, mute: false, solo: false }
+            let accomp = name == muse_sing_lib::project::ACCOMPANIMENT || name == muse_sing_lib::project::METRONOME;
+            let mute = name == muse_sing_lib::project::METRONOME && !args.iter().any(|a| a == "--metronome");
+            MixPart { name, volume_db: if accomp { -6.0 } else { 0.0 }, pan: 0.0, mute, solo: false }
         })
         .collect();
     let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience, opt("--reverb").and_then(|v| v.parse().ok()).unwrap_or(muse_sing_lib::fx::DEFAULT_AMOUNT))).unwrap();

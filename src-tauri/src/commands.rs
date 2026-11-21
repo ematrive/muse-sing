@@ -231,6 +231,57 @@ pub async fn install_tiger(app: tauri::AppHandle) -> Result<String> {
     res
 }
 
+/// Where the SoundFont of the instruments is installed.
+fn soundfont_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    Some(app.path().app_data_dir().ok()?.join("SoundFonts").join(crate::instruments::SOUNDFONT_FILE))
+}
+
+/// Whether the instruments (SoundFont) are installed.
+#[tauri::command]
+pub fn soundfont_installed(app: tauri::AppHandle) -> bool {
+    soundfont_path(&app).is_some_and(|p| p.is_file())
+}
+
+/// Event with the progress of `install_soundfont` (`tiger::Progress`).
+pub const SOUNDFONT_EVENT: &str = "soundfont-progress";
+
+static SOUNDFONT_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Downloads the instruments (GeneralUser GS, from Muse Sing's own copy) into the app data.
+#[tauri::command]
+pub async fn install_soundfont(app: tauri::AppHandle) -> Result<String> {
+    use std::sync::atomic::Ordering;
+    if SOUNDFONT_BUSY.swap(true, Ordering::SeqCst) {
+        return Err(Error::Other("gli strumenti si stanno già scaricando".into()));
+    }
+    let res = async {
+        let dest = soundfont_path(&app).ok_or_else(|| Error::Other("cartella dell'app non disponibile".into()))?;
+        if let Some(dir) = dest.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let emit = {
+            let app = app.clone();
+            move |p: crate::tiger::Progress| {
+                let _ = app.emit(SOUNDFONT_EVENT, p);
+            }
+        };
+        crate::tiger::download(crate::instruments::SOUNDFONT_URL, &dest, emit).await?;
+        // a file that doesn't load is no use: remove it so the download can be retried
+        let check = dest.clone();
+        let ok = tauri::async_runtime::spawn_blocking(move || crate::instruments::load(&check).map(|_| ()))
+            .await
+            .map_err(|e| Error::Other(format!("strumenti: {e}")))?;
+        if let Err(e) = ok {
+            let _ = std::fs::remove_file(&dest);
+            return Err(e);
+        }
+        Ok(dest.to_string_lossy().to_string())
+    }
+    .await;
+    SOUNDFONT_BUSY.store(false, Ordering::SeqCst);
+    res
+}
+
 fn all_singers(app: &tauri::AppHandle) -> Vec<SingerInfo> {
     singers::list_singers(own_singers_dir(app).as_deref())
 }
@@ -489,7 +540,8 @@ impl SingState {
 
 /// Starts rendering the parts; returns the job id carried by `sing-progress` / `sing-done`.
 #[tauri::command]
-pub fn sing_start(app: tauri::AppHandle, state: State<SingState>, req: RenderRequest) -> Result<u64> {
+pub fn sing_start(app: tauri::AppHandle, state: State<SingState>, mut req: RenderRequest) -> Result<u64> {
+    req.soundfont = soundfont_path(&app).filter(|p| p.is_file());
     let sing = state.0.clone();
     let job = sing.begin();
     std::thread::spawn(move || {
@@ -555,9 +607,22 @@ pub async fn sing_play(
     loop_range: Option<(f64, f64)>,
     ambience: Option<Ambience>,
     reverb: Option<f32>,
+    count_in: Option<bool>,
 ) -> Result<u64> {
     let (sing, engine) = (state.0.clone(), audio.0.clone());
-    let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
+    let (mut l, mut r) = sing.with_tracks(|t| mix::mix_in(t, &mix, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
+    // a measure of clicks before the start (not when looping a range): the buffer then starts
+    // with the clicks, and the reported position is moved back to the score's time
+    let sr = crate::ds::render::SAMPLE_RATE;
+    let (mut play_from, mut shift, mut counting) = (from_sec, 0.0, false);
+    if count_in == Some(true) && loop_range.is_none() {
+        let pre = sing.count_in(from_sec);
+        let start = ((from_sec * sr as f64) as usize).min(l.len());
+        let lead = pre.len() as f64 / sr as f64;
+        l = pre.iter().copied().chain(l[start..].iter().copied()).collect();
+        r = pre.iter().copied().chain(r[start..].iter().copied()).collect();
+        (play_from, shift, counting) = (0.0, from_sec - lead, true);
+    }
     let job = blocking({
         let engine = engine.clone();
         move || {
@@ -569,9 +634,11 @@ pub async fn sing_play(
     *state.1.lock().unwrap_or_else(|e| e.into_inner()) = job;
     std::thread::spawn(move || {
         let progress = |t: f64, total: f64| {
-            let _ = app.emit("sing-play", PlayProgress { job, t, total });
+            // during the count-in the cursor waits at the start
+            let t = if counting { (t + shift).max(from_sec) } else { t };
+            let _ = app.emit("sing-play", PlayProgress { job, t, total: total + shift });
         };
-        let res = engine.play_stereo(job, &l, &r, crate::ds::render::SAMPLE_RATE, from_sec, loop_range, &progress);
+        let res = engine.play_stereo(job, &l, &r, sr, play_from, loop_range, &progress);
         engine.end_job(job);
         let _ = app.emit("sing-play-done", PlayDone { job, error: res.err().map(|e| e.to_string()) });
     });
@@ -642,7 +709,7 @@ fn fresh_parts(a: &Analysis) -> Vec<PartCfg> {
     a.parts
         .iter()
         .filter(|p| p.sung)
-        .map(|p| PartCfg { name: p.name.clone(), sing: true, singer: String::new(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false, voices: 1 })
+        .map(|p| PartCfg { name: p.name.clone(), sing: true, singer: String::new(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false, voices: 1, played: false })
         .collect()
 }
 
@@ -836,6 +903,7 @@ fn file_safe(s: &str) -> String {
 /// Practice tracks: one file per sung part, with that part as mixed and the others lowered by
 /// `others_db` (the accompaniment stays as mixed). Returns the files written.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // the arguments of a Tauri command
 pub async fn sing_export_guides(
     state: State<'_, SingState>,
     mix: Vec<MixPart>,
@@ -844,13 +912,14 @@ pub async fn sing_export_guides(
     others_db: f32,
     ambience: Option<Ambience>,
     reverb: Option<f32>,
+    count_in: Option<bool>,
 ) -> Result<Vec<String>> {
     let sing = state.0.clone();
     blocking(move || {
         let title = file_safe(&sing.title());
         let names: Vec<String> = sing.with_tracks(|t| t.iter().map(|(n, _)| n.clone()).collect())?;
         let mut written = vec![];
-        for name in names.iter().filter(|n| n.as_str() != project::ACCOMPANIMENT) {
+        for name in names.iter().filter(|n| n.as_str() != project::ACCOMPANIMENT && n.as_str() != project::METRONOME) {
             let parts: Vec<MixPart> = mix
                 .iter()
                 .map(|p| {
@@ -858,13 +927,18 @@ pub async fn sing_export_guides(
                     p.solo = false;
                     if &p.name == name {
                         p.mute = false;
-                    } else if p.name != project::ACCOMPANIMENT {
+                    } else if p.name != project::ACCOMPANIMENT && p.name != project::METRONOME {
                         p.volume_db += others_db;
                     }
                     p
                 })
                 .collect();
-            let (l, r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
+            let (mut l, mut r) = sing.with_tracks(|t| mix::mix_in(t, &parts, ambience.unwrap_or_default(), reverb.unwrap_or(crate::fx::DEFAULT_AMOUNT)))?;
+            if count_in == Some(true) {
+                let pre = sing.count_in(0.0);
+                l.splice(0..0, pre.iter().copied());
+                r.splice(0..0, pre.iter().copied());
+            }
             let path = Path::new(&dir).join(format!("{title} - {}.{ext}", file_safe(name)));
             mix::export(&path, &l, &r, crate::ds::render::SAMPLE_RATE, &format!("{} ({name})", sing.title()))?;
             written.push(path.to_string_lossy().into_owned());

@@ -42,6 +42,9 @@ export type SingersList = {
 export const api = {
   analyze: (path: string) => invoke<Analysis>("analyze", { path }),
   listSingers: () => invoke<SingersList>("list_singers"),
+  soundfontInstalled: () => invoke<boolean>("soundfont_installed"),
+  /** Downloads the instruments (SoundFont, about 31 MB); progress: `SOUNDFONT_EVENT`. */
+  installSoundfont: () => invoke<string>("install_soundfont"),
   /** Downloads TIGER DS from its official release into Muse Sing's Singers folder. */
   installTiger: () => invoke<string>("install_tiger"),
 };
@@ -49,6 +52,7 @@ export const api = {
 /** Progress of `installTiger` (event `tiger-progress`); `total` is 0 when unknown. */
 export type TigerProgress = { phase: "download" | "extract"; done: number; total: number };
 export const TIGER_EVENT = "tiger-progress";
+export const SOUNDFONT_EVENT = "soundfont-progress";
 
 // --- projects (.msng) ----------------------------------------------------------------------
 
@@ -63,7 +67,32 @@ export type PartCfg = {
   solo: boolean;
   /** singers in the section (1 = a soloist) */
   voices: number;
+  /** played on the piano instead of sung */
+  played: boolean;
 };
+export type Instrument = "organo_canne" | "armonium" | "pianoforte" | "archi" | "flauto" | "chitarra" | "arpa";
+export const INSTRUMENTS: Record<Instrument, string> = {
+  organo_canne: "Organo a canne",
+  armonium: "Armonium",
+  pianoforte: "Pianoforte",
+  archi: "Archi",
+  flauto: "Flauto",
+  chitarra: "Chitarra",
+  arpa: "Arpa",
+};
+/** The instrument guessed from a part name (as `Instrument::for_part` in Rust). */
+export function instrumentFor(name: string): Instrument {
+  const n = name.toLowerCase();
+  const has = (keys: string[]) => keys.some((k) => n.includes(k));
+  if (has(["armonium", "harmonium"])) return "armonium";
+  if (has(["piano", "pf.", "tastier", "keyboard"])) return "pianoforte";
+  if (has(["chitarr", "guitar"])) return "chitarra";
+  if (has(["flaut", "flute"])) return "flauto";
+  if (has(["viol", "archi", "string", "cello", "contrabb", "bass"]) && !has(["basso", "bassi"])) return "archi";
+  if (has(["arpa", "harp"])) return "arpa";
+  return "organo_canne";
+}
+export const METRONOME = "Metronomo";
 export type Ambience = "nessuno" | "stanza" | "chiesa" | "cattedrale";
 /** Room ambience of the mix, as sent to playback and export. */
 export type Room = { ambience: Ambience; reverb: number };
@@ -82,6 +111,9 @@ export type Project = {
   ambience: Ambience;
   /** amount of reverb 0..1 (0.5 = as designed) */
   reverb: number;
+  instruments: Record<string, Instrument>;
+  metronome: AccompCfg;
+  count_in: boolean;
 };
 /** Curve points (tick, value): ticks of the written score, every CURVE_STEP; missing = default. */
 export type Curve = [number, number][];
@@ -131,7 +163,7 @@ export const projectApi = {
 // --- sung audio (Muse Sing's DiffSinger engine) --------------------------------------------------
 
 export type PitchMode = "model" | "notes";
-export type RenderPart = { name: string; singer: string; color: string | null; voices: number };
+export type RenderPart = { name: string; singer: string; color: string | null; voices: number; played: boolean };
 export type RenderRequest = {
   path: string;
   lang: Lang;
@@ -140,6 +172,7 @@ export type RenderRequest = {
   tempo_factor: number;
   accompaniment: boolean;
   edits: Record<string, PartEdits>;
+  instruments: Record<string, Instrument>;
 };
 export type PhoneInfo = { symbol: string; start: number; end: number; base: number };
 export type WordInfo = { id: string; word: string; start: number; end: number; phones: PhoneInfo[] };
@@ -157,13 +190,13 @@ export const singApi = {
   start: (req: RenderRequest) => invoke<number>("sing_start", { req }),
   cancel: () => invoke<void>("sing_cancel"),
   trackInfo: (part: string) => invoke<TrackInfo | null>("sing_track_info", { part }),
-  play: (mix: MixPart[], fromSec: number, loopRange: [number, number] | null, room: Room) =>
-    invoke<number>("sing_play", { mix, fromSec, loopRange, ...room }),
+  play: (mix: MixPart[], fromSec: number, loopRange: [number, number] | null, room: Room, countIn: boolean) =>
+    invoke<number>("sing_play", { mix, fromSec, loopRange, ...room, countIn }),
   stop: () => invoke<void>("sing_stop"),
   export: (mix: MixPart[], path: string, room: Room) => invoke<string>("sing_export", { mix, path, ...room }),
   /** One file per sung part, that part in front and the others lowered by `othersDb`. */
-  exportGuides: (mix: MixPart[], dir: string, ext: string, othersDb: number, room: Room) =>
-    invoke<string[]>("sing_export_guides", { mix, dir, ext, othersDb, ...room }),
+  exportGuides: (mix: MixPart[], dir: string, ext: string, othersDb: number, room: Room, countIn: boolean) =>
+    invoke<string[]>("sing_export_guides", { mix, dir, ext, othersDb, ...room, countIn }),
 };
 
 export const LANGS: Record<Lang, string> = { it: "Italiano", en: "English", la: "Latino (ecclesiastico)" };

@@ -392,7 +392,7 @@ mod tests {
                 notes.push(Note { id: String::new(), start: 0.into(), dur: 1.into(), pitch: 60, lyric: Some(Lyric { text: sy.to_string(), syllabic }) });
             }
         }
-        vec![Part { name: "S".into(), notes }]
+        vec![Part { name: "S".into(), notes, ..Default::default() }]
     }
 
     #[test]

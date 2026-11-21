@@ -182,6 +182,13 @@ fn musicxml_matches_mscz() {
         assert!(!a.warnings.iter().any(|w| w.contains("metro")), "{name}: {:?}", a.warnings);
         assert_eq!(a.time_sigs, b.time_sigs, "{name}: time signatures");
         assert_eq!(a.bars, b.bars, "{name}: bars");
+        assert_eq!(a.parts.len(), b.parts.len(), "{name}: parts");
+        assert!(a.parts.iter().all(|p| p.tones.len() >= p.notes.len()), "{name}: every note is also a tone");
+        for (x, y) in a.parts.iter().zip(&b.parts) {
+            // the formats differ on a few shared or tied notes: nearly all must match
+            let common = x.tones.iter().filter(|t| y.tones.contains(t)).count();
+            assert!(common * 100 >= x.tones.len().max(y.tones.len()) * 97, "{name} / {}: {common} of {} / {}", x.name, x.tones.len(), y.tones.len());
+        }
         let sung = |s: &muse_sing_lib::score::Score| s.parts.iter().filter(|p| p.is_sung()).cloned().collect::<Vec<_>>();
         let (pa, pb) = (sung(&a), sung(&b));
         assert_eq!(pa.len(), pb.len(), "{name}: sung parts");

@@ -34,6 +34,9 @@ pub struct PartReq {
     /// Singers in the section (1 = a soloist).
     #[serde(default = "one_voice")]
     pub voices: u8,
+    /// Played on the piano instead of sung (a guide to learn the notes).
+    #[serde(default)]
+    pub played: bool,
 }
 
 fn one_voice() -> u8 {
@@ -85,6 +88,12 @@ pub struct RenderRequest {
     /// Pronunciation and curve edits by part name.
     #[serde(default)]
     pub edits: HashMap<String, PartEdits>,
+    /// Instrument of each instrumental part (missing: guessed from the name).
+    #[serde(default)]
+    pub instruments: HashMap<String, crate::instruments::Instrument>,
+    /// The SoundFont, when installed (set by the app, not by the UI).
+    #[serde(skip)]
+    pub soundfont: Option<PathBuf>,
 }
 
 /// A phoneme of a sung word, for the pronunciation editor (seconds on the track).
@@ -152,6 +161,9 @@ pub struct Track {
     pub samples: Arc<Vec<f32>>,
 }
 
+/// Beats (seconds, first of the measure) and sung notes (start, end, pitch) in seconds.
+type Timeline = (Vec<(f64, bool)>, Vec<(f64, f64, i32)>);
+
 pub struct Sing {
     next_job: AtomicU64,
     /// Running render (0 = none).
@@ -160,6 +172,9 @@ pub struct Sing {
     tracks: Mutex<Vec<Track>>,
     info: Mutex<HashMap<String, Arc<TrackInfo>>>,
     title: Mutex<String>,
+    /// Beats (seconds, first of the measure) and sung notes (start, end, pitch) of the last
+    /// render, for the count-in.
+    timeline: Mutex<Timeline>,
     voicebanks: Mutex<HashMap<PathBuf, Arc<Voicebank>>>,
     cache_dir: Option<PathBuf>,
 }
@@ -190,6 +205,7 @@ impl Sing {
             tracks: Mutex::new(vec![]),
             info: Mutex::new(HashMap::new()),
             title: Mutex::new(String::new()),
+            timeline: Mutex::new((vec![], vec![])),
             voicebanks: Mutex::new(HashMap::new()),
             cache_dir: cache_dir.map(|d| d.join("render")),
         }
@@ -220,6 +236,12 @@ impl Sing {
 
     pub fn title(&self) -> String {
         lock(&self.title).clone()
+    }
+
+    /// A measure of clicks (and the first chord) to play before starting at `from` seconds.
+    pub fn count_in(&self, from: f64) -> Vec<f32> {
+        let t = lock(&self.timeline);
+        crate::accomp::count_in(&t.0, &t.1, from, ds::render::SAMPLE_RATE)
     }
 
     /// Words, phonemes and pitch of a part of the last render.
@@ -259,7 +281,7 @@ impl Sing {
         };
         // every singer must be usable by the engine
         let mut chosen: HashMap<&str, &SingerInfo> = HashMap::new();
-        for p in &req.parts {
+        for p in req.parts.iter().filter(|p| !p.played) {
             let s = singers
                 .iter()
                 .find(|s| s.id == p.singer)
@@ -277,7 +299,7 @@ impl Sing {
 
         let src = PathBuf::from(&req.path);
         let sc = score::read_score(&src)?;
-        let names: Vec<String> = req.parts.iter().map(|p| p.name.clone()).collect();
+        let names: Vec<String> = req.parts.iter().filter(|p| !p.played).map(|p| p.name.clone()).collect();
         crate::log!("velocità {:.0}%, accompagnamento {}", req.tempo_factor * 100.0, if req.accompaniment { "sì" } else { "no" });
         let no_hints = HashMap::new();
         let fallback = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
@@ -451,13 +473,40 @@ impl Sing {
         if !self.is_current(job) {
             return Ok(None);
         }
+        let sr = ds::render::SAMPLE_RATE;
+        let sf = req.soundfont.as_deref().and_then(|p| match crate::instruments::load(p) {
+            Ok(sf) => Some(sf),
+            Err(e) => {
+                warnings.push(format!("Strumenti non caricati ({e}): suona l'organo semplice."));
+                None
+            }
+        });
+        let ticks = |b: score::Beats| *b.numer() as f64 / *b.denom() as f64 * ustx::TICKS as f64;
+        let secs = |b: score::Beats| axis.tick_to_ms(ticks(b)) / 1000.0;
+        let melody = |name: &str| -> Vec<(f64, f64, i32)> {
+            sc.parts.iter().find(|p| p.name == name).map_or(vec![], |p| p.notes.iter().map(|n| (secs(n.start), secs(n.start + n.dur), n.pitch)).collect())
+        };
+        // the parts played as a guide
+        for p in req.parts.iter().filter(|p| p.played) {
+            let samples = crate::accomp::guide(&melody(&p.name), sr, sf.as_ref());
+            crate::log!("{}: suonata ({:.1} s)", p.name, samples.len() as f64 / sr as f64);
+            tracks.push(Track { name: p.name.clone(), samples: Arc::new(samples) });
+        }
         if req.accompaniment {
-            let samples = crate::accomp::render(&sc, &axis, ds::render::SAMPLE_RATE);
+            let samples = crate::accomp::render(&sc, &axis, sr, &req.instruments, sf.as_ref(), 0);
             if !samples.is_empty() {
-                crate::log!("accompagnamento: {:.1} s", samples.len() as f64 / ds::render::SAMPLE_RATE as f64);
+                crate::log!("accompagnamento: {:.1} s", samples.len() as f64 / sr as f64);
                 tracks.push(Track { name: crate::project::ACCOMPANIMENT.into(), samples: Arc::new(samples) });
             }
         }
+        // metronome (always ready: the mix mutes it when it is off) and the count-in data
+        let beats: Vec<(f64, bool)> = crate::accomp::beats(&sc).iter().map(|b| (secs(b.at), b.accent)).collect();
+        let click = crate::accomp::metronome(&beats, sr);
+        if !click.is_empty() && !tracks.is_empty() {
+            tracks.push(Track { name: crate::project::METRONOME.into(), samples: Arc::new(click) });
+        }
+        let sung: Vec<(f64, f64, i32)> = req.parts.iter().flat_map(|p| melody(&p.name)).collect();
+        *lock(&self.timeline) = (beats, sung);
         if tracks.is_empty() {
             return Err(Error::Other("niente da suonare: la partitura non ha né voci scelte né parti strumentali".into()));
         }

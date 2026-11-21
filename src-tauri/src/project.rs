@@ -35,6 +35,8 @@ fn score_format(score: &[u8]) -> Result<Format> {
 }
 /// Name of the accompaniment track in the mix.
 pub const ACCOMPANIMENT: &str = "Accompagnamento";
+/// Name of the metronome track in the mix.
+pub const METRONOME: &str = "Metronomo";
 
 fn default_true() -> bool {
     true
@@ -69,13 +71,16 @@ pub struct PartCfg {
     /// Singers in the section (1 = a soloist).
     #[serde(default = "default_voices")]
     pub voices: u8,
+    /// Played on the piano instead of sung.
+    #[serde(default)]
+    pub played: bool,
 }
 
 fn default_voices() -> u8 {
     1
 }
 
-/// The instrumental parts, played by a simple organ sound.
+/// A played track (the accompaniment, the metronome): on or off and its place in the mix.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AccompCfg {
     #[serde(default)]
@@ -127,6 +132,15 @@ pub struct Project {
     /// Amount of reverb, 0..1 (`fx::DEFAULT_AMOUNT` = the preset as designed).
     #[serde(default = "default_reverb")]
     pub reverb: f32,
+    /// Instrument of each instrumental part (missing: guessed from the part name).
+    #[serde(default)]
+    pub instruments: HashMap<String, crate::instruments::Instrument>,
+    /// Click on every beat, in the mix.
+    #[serde(default)]
+    pub metronome: AccompCfg,
+    /// A measure of clicks before playback starts.
+    #[serde(default)]
+    pub count_in: bool,
 }
 
 fn default_reverb() -> f32 {
@@ -147,6 +161,9 @@ impl Project {
             edits: HashMap::new(),
             ambience: crate::fx::Ambience::Chiesa,
             reverb: crate::fx::DEFAULT_AMOUNT,
+            instruments: HashMap::new(),
+            metronome: AccompCfg::default(),
+            count_in: false,
         }
     }
 }
@@ -223,7 +240,7 @@ mod tests {
     use super::*;
 
     fn part(name: &str) -> PartCfg {
-        PartCfg { name: name.into(), sing: true, singer: "s".into(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false, voices: 1 }
+        PartCfg { name: name.into(), sing: true, singer: "s".into(), color: None, volume_db: 0.0, pan: 0.0, mute: false, solo: false, voices: 1, played: false }
     }
 
     #[test]

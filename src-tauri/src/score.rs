@@ -1,5 +1,5 @@
-//! Reads a MuseScore 4 `.mscz` (zip + `.mscx` XML) into per-part note lists with lyrics.
-//! Reference implementation: `tools/mscx_parse.py`.
+//! Reads a MuseScore 4 `.mscz` (zip + `.mscx` XML) into per-part note lists with lyrics; MusicXML
+//! goes through `musicxml.rs` and the same `assemble`. Reference implementation: `tools/mscx_parse.py`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Read;
@@ -66,6 +66,70 @@ const GRACE_TAGS: &[&str] = &[
     "acciaccatura", "appoggiatura", "grace4", "grace8", "grace16", "grace32",
     "grace8after", "grace16after", "grace32after",
 ];
+
+/// Score file formats, recognised from the content (not the file name).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    Mscz,
+    /// Compressed MusicXML.
+    Mxl,
+    MusicXml,
+}
+
+impl Format {
+    /// File extension for a copy of the score.
+    pub fn extension(self) -> &'static str {
+        match self {
+            Format::Mscz => "mscz",
+            Format::Mxl => "mxl",
+            Format::MusicXml => "musicxml",
+        }
+    }
+
+    pub fn detect(bytes: &[u8]) -> Option<Format> {
+        if bytes.starts_with(b"PK") {
+            let zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+            let names: Vec<&str> = zip.file_names().collect();
+            if names.iter().any(|n| n.ends_with(".mscx")) {
+                return Some(Format::Mscz);
+            }
+            if names.iter().any(|n| *n == "META-INF/container.xml" || n.ends_with(".musicxml") || n.ends_with(".xml")) {
+                return Some(Format::Mxl);
+            }
+            return None;
+        }
+        // skip a byte-order mark, the XML declaration, comments and the DOCTYPE
+        let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
+        (head.contains("<score-partwise") || head.contains("<score-timewise")).then_some(Format::MusicXml)
+    }
+}
+
+/// Reads a MuseScore file or a MusicXML file (plain or compressed).
+pub fn read_score(path: &Path) -> Result<Score> {
+    let bytes = std::fs::read(path)?;
+    match Format::detect(&bytes) {
+        Some(Format::Mscz) => read_mscz(path),
+        Some(Format::Mxl) => crate::musicxml::parse_musicxml(&crate::musicxml::mxl_root(&bytes)?),
+        Some(Format::MusicXml) => {
+            let text = String::from_utf8(bytes)
+                .or_else(|e| utf16(e.as_bytes()).ok_or(e))
+                .map_err(|_| Error::Format("MusicXML: codifica del testo non riconosciuta".into()))?;
+            crate::musicxml::parse_musicxml(text.trim_start_matches('\u{feff}'))
+        }
+        None => Err(Error::Format("serve una partitura MuseScore (.mscz) o MusicXML (.musicxml, .mxl)".into())),
+    }
+}
+
+/// UTF-16 text with a byte-order mark (some Windows exporters).
+fn utf16(b: &[u8]) -> Option<String> {
+    let le = match b.get(..2)? {
+        [0xFF, 0xFE] => true,
+        [0xFE, 0xFF] => false,
+        _ => return None,
+    };
+    let units: Vec<u16> = b[2..].as_chunks::<2>().0.iter().map(|c| if le { u16::from_le_bytes(*c) } else { u16::from_be_bytes(*c) }).collect();
+    String::from_utf16(&units).ok()
+}
 
 pub fn read_mscz(path: &Path) -> Result<Score> {
     let file = std::fs::File::open(path)?;
@@ -164,12 +228,11 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
 
     let staves: Vec<Node> = score.children().filter(|c| c.has_tag_name("Staff")).collect();
     let mut warnings = vec![];
-    let mut tempos: BTreeMap<Beats, f64> = BTreeMap::new();
     let mut time_sigs: Vec<(i32, i32)> = vec![];
     let mut lyrics_other_voice = BTreeSet::new();
 
     // 1) read every staff measure by measure
-    let mut staff_measures: Vec<Vec<MeasureData>> = vec![];
+    let mut staff_data: Vec<StaffData> = vec![];
     for staff in &staves {
         let sid = staff.attribute("id").unwrap_or("").to_string();
         let name = staff_name.get(&sid).cloned().unwrap_or_else(|| sid.clone());
@@ -177,11 +240,36 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
         for meas in staff.children().filter(|c| c.has_tag_name("Measure")) {
             ms.push(read_measure(meas, &name, &mut time_sigs, &mut lyrics_other_voice));
         }
-        staff_measures.push(ms);
+        staff_data.push(StaffData { name, id: sid, measures: ms });
     }
+    if score.descendants().any(|d| d.has_tag_name("MeasureRepeat")) {
+        warnings.push("La partitura ha battute di ripetizione (simile): restano vuote.".into());
+    }
+    Ok(assemble(title, staff_data, time_sigs, lyrics_other_voice, warnings))
+}
+
+/// The measures of one staff as written, before repeats are unrolled.
+pub(crate) struct StaffData {
+    pub name: String,
+    /// Shown after the name when two staves have the same name.
+    pub id: String,
+    pub measures: Vec<MeasureData>,
+}
+
+/// From the written measures of every staff to the parts as they are played: repeats, voltas and
+/// jumps unrolled, verses picked by pass, ties merged. Shared by MuseScore and MusicXML.
+pub(crate) fn assemble(
+    title: Option<String>,
+    staff_data: Vec<StaffData>,
+    time_sigs: Vec<(i32, i32)>,
+    lyrics_other_voice: BTreeSet<String>,
+    mut warnings: Vec<String>,
+) -> Score {
+    let mut tempos: BTreeMap<Beats, f64> = BTreeMap::new();
+    let staff_measures: Vec<&Vec<MeasureData>> = staff_data.iter().map(|s| &s.measures).collect();
 
     // 2) playback order (repeats, voltas, D.C./D.S.), from the structure of all staves
-    let n_meas = staff_measures.iter().map(Vec::len).max().unwrap_or(0);
+    let n_meas = staff_measures.iter().map(|m| m.len()).max().unwrap_or(0);
     let structure: Vec<Structure> = (0..n_meas)
         .map(|i| {
             let mut st = Structure::default();
@@ -200,14 +288,13 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
     warnings.extend(unsupported);
 
     // 3) lay the measures out in that order
-    let max_verse = staff_measures.iter().flatten().flat_map(|m| &m.notes).flat_map(|n| n.lyrics.keys()).max().copied().unwrap_or(0);
+    let max_verse = staff_measures.iter().copied().flatten().flat_map(|m| &m.notes).flat_map(|n| n.lyrics.keys()).max().copied().unwrap_or(0);
     let max_pass = order.iter().map(|(_, p)| *p).max().unwrap_or(1);
     let mut parts: Vec<Part> = vec![];
-    for (si, staff) in staves.iter().enumerate() {
-        let sid = staff.attribute("id").unwrap_or("").to_string();
-        let mut name = staff_name.get(&sid).cloned().unwrap_or_else(|| sid.clone());
+    for (si, staff) in staff_data.iter().enumerate() {
+        let mut name = staff.name.clone();
         if parts.iter().any(|p| p.name == name) {
-            name = format!("{name} ({sid})");
+            name = format!("{name} ({})", staff.id);
         }
         let mut notes: Vec<(Note, bool)> = vec![];
         let mut mstart: Beats = Ratio::from_integer(0);
@@ -250,10 +337,10 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
     }
     // tempo marks of the other staves (rare): keep the first staff's, add the missing ones
     if tempos.is_empty() {
-        for (si, _) in staves.iter().enumerate().skip(1) {
+        for ms in staff_measures.iter().skip(1) {
             let mut mstart: Beats = Ratio::from_integer(0);
             for &(mi, _) in &order {
-                if let Some(m) = staff_measures[si].get(mi) {
+                if let Some(m) = ms.get(mi) {
                     for (off, t) in &m.tempos {
                         tempos.insert(mstart + off, *t);
                     }
@@ -274,9 +361,6 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
         let v: Vec<String> = lyrics_other_voice.into_iter().collect();
         warnings.push(format!("Testo nella seconda voce del pentagramma ({}): viene usata solo la prima voce.", v.join(", ")));
     }
-    if score.descendants().any(|d| d.has_tag_name("MeasureRepeat")) {
-        warnings.push("La partitura ha battute di ripetizione (simile): restano vuote.".into());
-    }
     if time_sigs.len() > 1 {
         warnings.push("Il metro cambia durante il brano: le note restano a tempo, ma la griglia delle battute in OpenUtau segue solo l'ultimo metro.".into());
     }
@@ -285,13 +369,13 @@ pub fn parse_mscx(xml: &str) -> Result<Score> {
     if tempos.is_empty() {
         tempos.push((Ratio::from_integer(0), 2.0));
     }
-    Ok(Score {
+    Score {
         title,
         time_sig: time_sigs.last().copied().unwrap_or((4, 4)),
         tempos,
         parts,
         warnings,
-    })
+    }
 }
 
 /// Repeat / jump information of one measure.
@@ -326,20 +410,21 @@ impl Structure {
     }
 }
 
-struct NoteData {
-    offset: Beats,
-    dur: Beats,
-    pitch: i32,
-    tie_prev: bool,
+pub(crate) struct NoteData {
+    pub offset: Beats,
+    pub dur: Beats,
+    pub pitch: i32,
+    pub tie_prev: bool,
     /// verse number (0-based) -> lyric
-    lyrics: BTreeMap<i32, Lyric>,
+    pub lyrics: BTreeMap<i32, Lyric>,
 }
 
-struct MeasureData {
-    len: Beats,
-    notes: Vec<NoteData>,
-    tempos: Vec<(Beats, f64)>,
-    structure: Structure,
+pub(crate) struct MeasureData {
+    pub len: Beats,
+    pub notes: Vec<NoteData>,
+    /// (offset in the measure, quarter notes per second)
+    pub tempos: Vec<(Beats, f64)>,
+    pub structure: Structure,
 }
 
 fn read_measure(meas: Node, staff_name: &str, time_sigs: &mut Vec<(i32, i32)>, lyrics_other_voice: &mut BTreeSet<String>) -> MeasureData {

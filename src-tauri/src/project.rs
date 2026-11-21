@@ -1,6 +1,7 @@
-//! Muse Sing projects (`.musesing`): a zip with `project.json` (choices, mix, edits) and a copy
-//! of the score (`score.mscz`), so a project can be moved or sent on its own. Rendered audio is
-//! not stored: it lives in the render cache and can always be made again.
+//! Muse Sing projects (`.msng`, formerly `.musesing`): a zip with `project.json` (choices, mix,
+//! edits) and a copy of the score (`score.mscz`, `score.mxl` or `score.musicxml`), so a project can
+//! be moved or sent on its own. Rendered audio is not stored: it lives in the render cache and can
+//! always be made again.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -11,11 +12,27 @@ use serde::{Deserialize, Serialize};
 use crate::edits::PartEdits;
 use crate::error::{Error, Result};
 use crate::lyrics::Lang;
+use crate::score::Format;
 
-pub const EXTENSION: &str = "musesing";
+pub const EXTENSION: &str = "msng";
+/// Extensions of projects saved by older versions (still opened; saved again as `.msng`).
+pub const LEGACY_EXTENSIONS: &[&str] = &["musesing"];
 const FORMAT_VERSION: u32 = 1;
 const PROJECT_JSON: &str = "project.json";
-const SCORE: &str = "score.mscz";
+/// The score copy inside the project, by format.
+const SCORE_NAMES: &[&str] = &["score.mscz", "score.mxl", "score.musicxml"];
+
+/// Whether a path has a project extension (current or legacy).
+pub fn is_project_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .is_some_and(|e| e == EXTENSION || LEGACY_EXTENSIONS.contains(&e.as_str()))
+}
+
+fn score_format(score: &[u8]) -> Result<Format> {
+    Format::detect(score).ok_or_else(|| Error::Format("la partitura non è un file MuseScore o MusicXML".into()))
+}
 /// Name of the accompaniment track in the mix.
 pub const ACCOMPANIMENT: &str = "Accompagnamento";
 
@@ -122,15 +139,17 @@ fn zip_err(e: impl std::fmt::Display) -> Error {
 /// Writes the project and the score into `path` (through a temporary file, so a failed save
 /// leaves the previous version intact).
 pub fn save(path: &Path, project: &Project, score: &[u8]) -> Result<()> {
-    let tmp = path.with_extension("musesing.part");
+    let name = format!("score.{}", score_format(score)?.extension());
+    let tmp = path.with_extension(format!("{EXTENSION}.part"));
     {
         let file = std::fs::File::create(&tmp)?;
         let mut zip = zip::ZipWriter::new(file);
         let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         zip.start_file(PROJECT_JSON, opts).map_err(zip_err)?;
         zip.write_all(serde_json::to_string_pretty(project).map_err(zip_err)?.as_bytes())?;
-        // the .mscz is already compressed
-        zip.start_file(SCORE, opts.compression_method(zip::CompressionMethod::Stored)).map_err(zip_err)?;
+        // .mscz and .mxl are already compressed
+        let method = if name.ends_with(".musicxml") { zip::CompressionMethod::Deflated } else { zip::CompressionMethod::Stored };
+        zip.start_file(name, opts.compression_method(method)).map_err(zip_err)?;
         zip.write_all(score)?;
         zip.finish().map_err(zip_err)?;
     }
@@ -148,8 +167,12 @@ pub fn open(path: &Path) -> Result<(Project, Vec<u8>)> {
     if project.version > FORMAT_VERSION {
         return Err(Error::Format("progetto creato da una versione più nuova di Muse Sing: aggiorna l'app".into()));
     }
+    let name = SCORE_NAMES
+        .iter()
+        .find(|n| zip.index_for_name(n).is_some())
+        .ok_or_else(|| Error::Format("progetto senza partitura".into()))?;
     let mut score = vec![];
-    zip.by_name(SCORE).map_err(|_| Error::Format("progetto senza partitura".into()))?.read_to_end(&mut score)?;
+    zip.by_name(name).map_err(zip_err)?.read_to_end(&mut score)?;
     Ok((project, score))
 }
 
@@ -160,9 +183,10 @@ pub fn hash(bytes: &[u8]) -> u64 {
 
 /// Puts the score in the cache folder (where the rest of the app reads it) and returns its path.
 pub fn working_copy(cache_dir: &Path, score: &[u8]) -> Result<PathBuf> {
+    let ext = score_format(score)?.extension();
     let dir = cache_dir.join("projects");
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("{:016x}.mscz", hash(score)));
+    let path = dir.join(format!("{:016x}.{ext}", hash(score)));
     if !path.is_file() {
         std::fs::write(&path, score)?;
     }
@@ -191,14 +215,19 @@ mod tests {
         p.tempo_factor = 0.8;
         p.parts[1].volume_db = -3.0;
         p.edits.entry("Soprano".into()).or_default().words.insert("x".into(), "y".into());
-        let path = dir.join("t.musesing");
-        save(&path, &p, b"fake score").unwrap();
+        let path = dir.join("t.msng");
+        let xml = br#"<?xml version="1.0"?><score-partwise version="4.0"></score-partwise>"#;
+        save(&path, &p, xml).unwrap();
         let (back, score) = open(&path).unwrap();
         assert_eq!(back, p);
-        assert_eq!(score, b"fake score");
+        assert_eq!(score, xml);
         let wc = working_copy(&dir, &score).unwrap();
-        assert_eq!(std::fs::read(&wc).unwrap(), b"fake score");
-        assert!(open(&wc).is_err(), "a .mscz is not a project");
+        assert_eq!(wc.extension().unwrap(), "musicxml");
+        assert_eq!(std::fs::read(&wc).unwrap(), xml);
+        assert!(open(&wc).is_err(), "a score is not a project");
+        assert!(save(&path, &p, b"not a score").is_err());
+        assert!(is_project_path(Path::new("/a/b.MSNG")) && is_project_path(Path::new("x.musesing")));
+        assert!(!is_project_path(Path::new("x.mscz")));
         std::fs::remove_dir_all(dir).ok();
     }
 

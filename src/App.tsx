@@ -53,7 +53,7 @@ export default function App() {
           </button>
         </div>
       </header>
-      <ProjectView active={tab === "convert"} />
+      <ProjectView active={tab === "convert"} onShow={() => setTab("convert")} />
       <Record active={tab === "record"} />
       <Manual active={tab === "manual"} page={manualPage} setPage={setManualPage} />
     </div>

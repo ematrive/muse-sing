@@ -41,22 +41,22 @@ Serve un Mac con processore Apple (M1 o successivi): sui Mac Intel funziona solo
 
 ## Canta una partitura
 
-Ogni brano diventa un **progetto** (file `.musesing`): contiene una copia della partitura, i cantanti scelti, il mix e le altre impostazioni. Puoi spostarlo o mandarlo a qualcuno: si apre anche senza il `.mscz` originale. L'audio generato non è nel file, ma Muse Sing lo ricorda: riaprendo il progetto, «Genera audio» riusa le voci già calcolate.
+Ogni brano diventa un **progetto** (file `.msng`): contiene una copia della partitura, i cantanti scelti, il mix e le altre impostazioni. Puoi spostarlo o mandarlo a qualcuno: si apre anche senza la partitura originale. I progetti `.musesing` delle versioni precedenti si aprono ancora: al primo salvataggio diventano `.msng` (il vecchio file resta dov'era). L'audio generato non è nel file, ma Muse Sing lo ricorda: riaprendo il progetto, «Genera audio» riusa le voci già calcolate.
 
 ### Creare e salvare un progetto
 
 1. Apri la scheda **Canta una partitura**.
-2. **Trascina** il file `.mscz` nella finestra, oppure premi **Nuovo da partitura…**. Compaiono titolo, metro, tempo, durata, le voci e il rullo con le note di tutte le parti.
+2. **Trascina** la partitura nella finestra, oppure premi **Nuovo da partitura…**. Va bene un file di MuseScore (`.mscz`) o un MusicXML (`.musicxml`, `.mxl`, `.xml`), il formato che esportano gli altri programmi di notazione. Compaiono titolo, metro, tempo, durata, le voci e il rullo con le note di tutte le parti.
 3. Premi **Salva** (⌘S) e scegli dove mettere il progetto. **Salva con nome…** (⇧⌘S) ne fa una copia.
-4. Per riaprirlo: trascina il `.musesing` nella finestra, premi **Apri progetto…** o sceglilo tra i **progetti recenti** nella pagina iniziale.
+4. Per riaprirlo: fai doppio clic sul `.msng` nel Finder, trascinalo nella finestra, premi **Apri progetto…** o sceglilo tra i **progetti recenti** nella pagina iniziale.
 
 Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo ricorda prima di chiudere o di aprire un altro progetto.
 
-**Partitura corretta in MuseScore?** Premi **Ricarica partitura…** e scegli il `.mscz` aggiornato: le scelte delle voci che ci sono ancora restano, poi genera di nuovo.
+**Partitura corretta in MuseScore?** Premi **Ricarica partitura…** e scegli il file aggiornato: le scelte delle voci che ci sono ancora restano, poi genera di nuovo.
 
 ### Voci, cantanti e impostazioni
 
-- **Lingua:** viene riconosciuta da sola, ma puoi cambiarla.
+- **Lingua:** italiano, inglese o **latino (ecclesiastico)**; viene riconosciuta da sola, ma puoi cambiarla.
 - **Intonazione:**
   - **naturale:** il cantante decide come attaccare e legare le note, con un po' di vibrato. Suona più umano;
   - **esatta:** la voce sta ferma sulle note scritte. Utile per controllare l'intonazione della propria parte.
@@ -139,6 +139,13 @@ Il riquadro giallo elenca ciò che Muse Sing non gestisce del tutto:
   - *Dio*, *mio* e simili hanno la «i» piena;
   - le altre parole vengono dal dizionario italiano o, se mancano, da un modello che ne indovina la pronuncia.
 - **Inglese:** dizionario ARPAbet+, con correzioni per le forme arcaiche (*ask'd*, *feel'st*, *couldst*).
+- **Latino:** pronuncia ecclesiastica («all'italiana»), cantata con i suoni dell'italiano, quindi con qualunque cantante che canta in italiano:
+  - «c» e «g» dolci davanti a *e*, *i*, *ae*, *oe* (*pacem*, *regina*, *caeli*); *sc* = «sc» di *scena* (*descendit*, *suscipe*); *xc* = «ksc» (*excelsis*);
+  - *ae* e *oe* = «e»; *gn* = «gn» (*agnus*); *qu* e *ngu* = «kw», «ngw» (*qui*, *sanguis*);
+  - *ti* davanti a vocale = «tsi» (*gratia*, *etiam*), ma non dopo *s*, *t*, *x* (*hostia*);
+  - *h* muta, tranne *mihi* e *nihil* («miki», «nikil»); la doppia «r» è vibrante (*terra*); *j* e *i* davanti a vocale = «i» semiconsonante (*Iesu*, *eius*); *ex* davanti a vocale = «egz» (*exaudi*); *z* = «dz»;
+  - ogni sillaba scritta sotto una nota canta una sola vocale: in *lau-da-mus* la «u» di *lau* scivola sulla «a».
+  - Le «e» e le «o» sono chiuse e la «s» tra due vocali è sorda; se il tuo coro le canta diversamente, correggi la parola nei **Ritocchi** «in tutto il brano».
 - Una parola detta male si corregge nei **Ritocchi** (vedi sopra).
 
 ## Registra un cantante
@@ -274,7 +281,7 @@ Il calcolo usa il processore del Mac e dura circa quanto il brano, per ogni voce
 Controlla che non sia un refuso nella partitura. Puoi anche scrivere la pronuncia tra parentesi quadre nel testo della nota in MuseScore, per esempio `terra[t e rr a]`, e ricaricare la partitura; l'editor di pronuncia dentro Muse Sing arriverà in una prossima versione.
 
 **Le voci non partono insieme o il brano è troppo corto.**
-Controlla gli avvisi gialli. Se nella partitura ci sono ritornelli o salti scritti in modo insolito, segnalalo con il file `.mscz`.
+Controlla gli avvisi gialli. Se nella partitura ci sono ritornelli o salti scritti in modo insolito, segnalalo con il file della partitura. Con un MusicXML, prova anche a esportarlo di nuovo dal programma di notazione: alcuni programmi scrivono D.C., D.S. e Coda in modo incompleto.
 
 **Il microfono non registra nulla.**
 - Controlla l'ingresso in Impostazioni di Sistema → Suono → Ingresso.

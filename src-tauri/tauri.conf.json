@@ -58,7 +58,27 @@
       "entitlements": "./Entitlements.plist",
       "signingIdentity": "-"
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "fileAssociations": [
+      {
+        "ext": [
+          "msng",
+          "musesing"
+        ],
+        "name": "Progetto Muse Sing",
+        "description": "Progetto Muse Sing",
+        "role": "Editor",
+        "rank": "Owner",
+        "mimeType": "application/x-muse-sing",
+        "exportedType": {
+          "identifier": "app.musesing.desktop.project",
+          "conformsTo": [
+            "public.data",
+            "public.zip-archive"
+          ]
+        }
+      }
+    ]
   },
   "plugins": {
     "updater": {

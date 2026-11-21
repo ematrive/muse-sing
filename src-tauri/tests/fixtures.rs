@@ -142,3 +142,33 @@ fn note_ids_are_unique() {
         }
     }
 }
+
+/// A MusicXML exported by MuseScore from a fixture score (`<name>.musicxml` or `<name>.mxl` next to
+/// the `.mscz`) reads into the same parts, notes, ids and syllables. Skipped without the export.
+#[test]
+fn musicxml_matches_mscz() {
+    let Some(dir) = fixtures() else { return };
+    for name in ["santo", "agnello", "adoro", "sonnet"] {
+        let Some(xml) = ["musicxml", "mxl"].iter().map(|e| dir.join(format!("{name}.{e}"))).find(|p| p.exists()) else {
+            eprintln!("{name}: nessun export MusicXML, saltato");
+            continue;
+        };
+        let a = read_mscz(&dir.join(format!("{name}.mscz"))).unwrap();
+        let b = muse_sing_lib::score::read_score(&xml).unwrap();
+        assert_eq!(detect_lang(&a.parts), detect_lang(&b.parts), "{name}: language");
+        assert_eq!(a.tempos.len(), b.tempos.len(), "{name}: tempos");
+        for (x, y) in a.tempos.iter().zip(&b.tempos) {
+            assert!(x.0 == y.0 && (x.1 - y.1).abs() < 1e-4, "{name}: tempo {x:?} vs {y:?}");
+        }
+        let sung = |s: &muse_sing_lib::score::Score| s.parts.iter().filter(|p| p.is_sung()).cloned().collect::<Vec<_>>();
+        let (pa, pb) = (sung(&a), sung(&b));
+        assert_eq!(pa.len(), pb.len(), "{name}: sung parts");
+        for (x, y) in pa.iter().zip(&pb) {
+            assert_eq!(x.notes.len(), y.notes.len(), "{name} / {}: note count", x.name);
+            for (i, (n, m)) in x.notes.iter().zip(&y.notes).enumerate() {
+                let l = |n: &muse_sing_lib::score::Note| n.lyric.as_ref().map(|l| (l.text.clone(), l.syllabic.clone()));
+                assert_eq!((&n.id, n.start, n.dur, n.pitch, l(n)), (&m.id, m.start, m.dur, m.pitch, l(m)), "{name} / {} note {i}", x.name);
+            }
+        }
+    }
+}

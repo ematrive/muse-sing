@@ -348,3 +348,55 @@ fn shown_phonemes_round_trip() {
         }
     }
 }
+
+/// Latin is sung through phonetic hints in Italian G2p symbols: with a real voicebank no hint
+/// symbol may be dropped, and every syllable must get exactly one vowel (one per note).
+#[test]
+fn latin_words_with_a_real_voicebank() {
+    use muse_sing_lib::ds::{phonemize, time::TimeAxis, voicebank::Voicebank};
+    use muse_sing_lib::lyrics::word_lyrics;
+    use muse_sing_lib::score::{Lyric, Note, Syllabic};
+    let Some(vb) = std::env::var_os("MUSESING_TEST_VOICEBANK").map(PathBuf::from) else {
+        eprintln!("MUSESING_TEST_VOICEBANK not set: skipped");
+        return;
+    };
+    let text = "Glo-ri-a in ex-cel-sis De-o A-gnus De-i qui tol-lis pec-ca-ta mun-di gra-ti-a e-ti-am hos-ti-a \
+                Ie-su san-gui-nis mi-hi ni-hil lau-da-mus cae-li ec-ce de-scen-dit sus-ci-pe ex-au-di e-le-i-son \
+                Ky-ri-e Chri-ste pa-cem ho-san-na Sa-ba-oth re-gi-na cui huic al-le-lu-ia e-ius Is-ra-el Mi-cha-el \
+                e-quus fi-li-i ter-ra in-fer-ni Ze-cha-ri-as quo-ni-am ius-ti-ti-a lin-gua in-ae-sti-ma-bi-lis \
+                an-ge-lo-rum reg-gi-a ex-sul-tet";
+    let mut notes = vec![];
+    for w in text.split_whitespace() {
+        let syls: Vec<&str> = w.split('-').collect();
+        for (k, s) in syls.iter().enumerate() {
+            let syllabic = match (k, syls.len()) {
+                (_, 1) => Syllabic::Single,
+                (0, _) => Syllabic::Begin,
+                (k, n) if k == n - 1 => Syllabic::End,
+                _ => Syllabic::Middle,
+            };
+            notes.push(Note { id: String::new(), start: 0.into(), dur: 1.into(), pitch: 67, lyric: Some(Lyric { text: s.to_string(), syllabic }) });
+        }
+    }
+    let lyrics = word_lyrics(&notes, Lang::La, &Default::default());
+    // one word per phrase (a rest between words), one syllable per quarter note
+    let mut pnotes = vec![];
+    let mut tick = 0;
+    for (i, l) in lyrics.iter().enumerate() {
+        if i > 0 && !l.starts_with('+') {
+            tick += 480;
+        }
+        pnotes.push(phonemize::PNote { id: i.to_string(), position: tick, duration: 480, tone: 67, lyric: l.clone() });
+        tick += 480;
+    }
+    let vb = Voicebank::load(&vb).expect("voicebank");
+    let axis = TimeAxis::new(&[(0, 100.0)], 480);
+    let ph = phonemize::phonemize(&vb, Lang::La, &pnotes, &axis, "").expect("phonemize");
+    assert!(ph.warnings.is_empty(), "{:?}", ph.warnings);
+    let vowels: std::collections::HashSet<String> =
+        phonemize::singer_phonemes(&vb, Lang::La).unwrap().into_iter().filter(|(_, v)| *v).map(|(s, _)| s).collect();
+    for (g, group) in ph.groups.iter().enumerate() {
+        let n = ph.phones.iter().filter(|p| p.group == g && vowels.contains(&p.symbol)).count();
+        assert_eq!(n, group.len(), "{}: {:?}", pnotes[group[0]].lyric, ph.phones.iter().filter(|p| p.group == g).map(|p| &p.symbol).collect::<Vec<_>>());
+    }
+}

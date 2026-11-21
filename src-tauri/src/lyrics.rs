@@ -16,6 +16,8 @@ use crate::score::{Note, Part, Syllabic};
 pub enum Lang {
     It,
     En,
+    /// Ecclesiastical Latin, sung with the Italian phonemes.
+    La,
 }
 
 impl Lang {
@@ -23,13 +25,22 @@ impl Lang {
         match self {
             Lang::It => "it",
             Lang::En => "en",
+            Lang::La => "la",
+        }
+    }
+
+    /// Language of the dictionary and G2p used to sing it (Latin uses the Italian ones).
+    pub fn g2p_lang(self) -> Lang {
+        match self {
+            Lang::La => Lang::It,
+            l => l,
         }
     }
 
     /// OpenUtau phonemizer class.
     pub fn phonemizer(self) -> &'static str {
         match self {
-            Lang::It => "OpenUtau.Core.DiffSinger.DiffSingerItalianPhonemizer",
+            Lang::It | Lang::La => "OpenUtau.Core.DiffSinger.DiffSingerItalianPhonemizer",
             // DIFFS EN+: uses ax / dx / q, closer to native-English voicebanks such as Tiger DS
             Lang::En => "OpenUtau.Core.DiffSinger.DiffSingerARPAPlusEnglishPhonemizer",
         }
@@ -48,7 +59,7 @@ fn exception(lang: Lang, word: &str) -> Option<&'static str> {
             "weed/of" => "weedof[w iy d ah v]",
             _ => return None,
         }),
-        Lang::It => None,
+        Lang::It | Lang::La => None,
     }
 }
 
@@ -57,21 +68,55 @@ const IT_HIATUS: &[&str] = &["dio", "mio", "mia", "mie", "io", "zio", "zia", "vi
 
 const STOP_IT: &[&str] = &["il", "la", "di", "che", "e", "del", "della", "nel", "dei", "a", "noi", "mi", "su"];
 const STOP_EN: &[&str] = &["the", "and", "of", "thy", "to", "in", "my", "when", "be", "a", "this", "thou"];
+/// Latin words that are not Italian words too.
+const STOP_LA: &[&str] = &[
+    "et", "est", "qui", "quae", "cum", "sunt", "nobis", "deus", "dominus", "domine", "sanctus", "agnus", "tuam",
+    "eius", "mundi", "peccata", "excelsis", "kyrie", "eleison", "christe", "pacem", "spiritu", "filius", "patris",
+    "tollis", "miserere", "benedictus", "nomine", "ad", "sicut", "erat", "nunc", "semper", "saecula",
+    "saeculorum", "domini", "plena", "gratia", "tecum", "nostrum", "requiem", "deo", "pax", "hominibus", "laudamus", "tibi", "omnipotens",
+    "cuius", "corpus", "natum", "verum", "virgine", "sanguine", "cruce", "crucem", "hoc", "ecce", "panis", "angelorum",
+];
+/// Words of the other lists that are also Latin: they don't count against Latin.
+const ALSO_LATIN: &[&str] = &["in", "a", "e"];
 
-pub fn detect_lang(parts: &[Part]) -> Lang {
-    let strip: &[char] = &['.', ',', ';', ':', '!', '?', '"'];
-    let mut it = 0;
-    let mut en = 0;
-    for n in parts.iter().flat_map(|p| &p.notes) {
-        if let Some(l) = &n.lyric {
-            for w in l.text.split_whitespace() {
-                let w = w.trim_matches(strip).to_lowercase();
-                it += STOP_IT.contains(&w.as_str()) as i32;
-                en += STOP_EN.contains(&w.as_str()) as i32;
-            }
+/// The words of the lyrics (syllables joined, lower case, without punctuation and accents).
+fn words(notes: &[Note]) -> Vec<String> {
+    let mut out = vec![];
+    let mut cur = String::new();
+    for l in notes.iter().filter_map(|n| n.lyric.as_ref()) {
+        cur.push_str(&l.text);
+        if matches!(l.syllabic, Syllabic::Single | Syllabic::End) {
+            out.extend(
+                cur.split_whitespace()
+                    .map(|w| w.chars().filter(|c| c.is_alphabetic()).map(unaccent).collect::<String>().to_lowercase())
+                    .filter(|w| !w.is_empty()),
+            );
+            cur.clear();
         }
     }
-    if en > it { Lang::En } else { Lang::It }
+    out
+}
+
+pub fn detect_lang(parts: &[Part]) -> Lang {
+    let (mut it, mut en, mut la) = (0, 0, 0);
+    // the Italian and English votes without the words Latin has too
+    let (mut it_only, mut en_only) = (0, 0);
+    for w in parts.iter().flat_map(|p| words(&p.notes)) {
+        let w = w.as_str();
+        let shared = ALSO_LATIN.contains(&w) as i32;
+        it += STOP_IT.contains(&w) as i32;
+        en += STOP_EN.contains(&w) as i32;
+        it_only += STOP_IT.contains(&w) as i32 * (1 - shared);
+        en_only += STOP_EN.contains(&w) as i32 * (1 - shared);
+        la += STOP_LA.contains(&w) as i32;
+    }
+    if la > it_only && la > en_only {
+        Lang::La
+    } else if en > it {
+        Lang::En
+    } else {
+        Lang::It
+    }
 }
 
 fn is_word_char(c: char) -> bool {
@@ -88,6 +133,7 @@ pub fn clean(text: &str, lang: Lang) -> String {
     }
     let t = match lang {
         Lang::It => t.replace(['\'', '/'], ""),
+        Lang::La => t.replace(['\'', '/'], "").chars().map(unaccent).collect(),
         Lang::En => match t.split_once('/') {
             Some((first, _)) => first.to_string(),
             None => t,
@@ -100,7 +146,7 @@ const IT_VOW: &str = "aeiou";
 
 fn unaccent(c: char) -> char {
     match c {
-        'à' => 'a',
+        'à' | 'á' => 'a',
         'è' | 'é' => 'e',
         'ì' | 'í' => 'i',
         'ò' | 'ó' => 'o',
@@ -228,6 +274,11 @@ pub fn it_g2p_word(syllables: &[String]) -> Vec<&'static str> {
             p => p,
         }));
     }
+    it_refine(ph)
+}
+
+/// Italian assimilations on a G2p transcription: n before f/v and k/g, voiced s, single r after rr.
+pub fn it_refine(ph: Vec<&'static str>) -> Vec<&'static str> {
     let mut out: Vec<&'static str> = vec![];
     for (k, &p) in ph.iter().enumerate() {
         let next = ph.get(k + 1).copied();
@@ -281,6 +332,12 @@ pub fn word_lyrics(notes: &[Note], lang: Lang, hints: &HashMap<String, String>) 
         } else if lang == Lang::It && !lyric.contains('[') {
             let syls: Vec<String> = syls.into_iter().filter(|s| !s.is_empty()).collect();
             lyric = it_hint(&syls, &lyric);
+        } else if lang == Lang::La && !lyric.contains('[') {
+            let syls: Vec<String> = syls.into_iter().filter(|s| !s.is_empty()).collect();
+            let ph = crate::latin::word_phones(&syls);
+            if !ph.is_empty() {
+                lyric = format!("{lyric}[{}]", ph.join(" "));
+            }
         }
         lyrics[start] = lyric;
     }
@@ -317,6 +374,49 @@ mod tests {
         assert_eq!(w(&["an", "che"]), "a ng k e");
         assert_eq!(w(&["sme", "ral", "do"]), "z m e r a l d o");
         assert_eq!(w(&["quan", "do"]), "k w a n d o");
+    }
+
+    /// A part whose lyrics are written with hyphens between syllables, as in a score.
+    fn sung(text: &str) -> Vec<Part> {
+        use crate::score::Lyric;
+        let mut notes = vec![];
+        for w in text.split_whitespace() {
+            let syls: Vec<&str> = w.split('-').collect();
+            for (k, sy) in syls.iter().enumerate() {
+                let syllabic = match (k, syls.len()) {
+                    (_, 1) => Syllabic::Single,
+                    (0, _) => Syllabic::Begin,
+                    (k, n) if k == n - 1 => Syllabic::End,
+                    _ => Syllabic::Middle,
+                };
+                notes.push(Note { id: String::new(), start: 0.into(), dur: 1.into(), pitch: 60, lyric: Some(Lyric { text: sy.to_string(), syllabic }) });
+            }
+        }
+        vec![Part { name: "S".into(), notes }]
+    }
+
+    #[test]
+    fn detects_latin_by_whole_words() {
+        assert_eq!(detect_lang(&sung("Ky-ri-e e-le-i-son Chri-ste e-le-i-son")), Lang::La);
+        assert_eq!(detect_lang(&sung("A-gnus De-i qui tol-lis pec-ca-ta mun-di mi-se-re-re no-bis")), Lang::La);
+        assert_eq!(detect_lang(&sung("Glo-ri-a in ex-cel-sis De-o et in ter-ra pax ho-mi-ni-bus")), Lang::La);
+        assert_eq!(detect_lang(&sung("San-ctus San-ctus Do-mi-nus De-us Sa-ba-oth")), Lang::La);
+        // "in" is English and Latin: it doesn't outvote the Latin words
+        let ave = "A-ve ve-rum cor-pus na-tum de Ma-ri-a vir-gi-ne ve-re pas-sum im-mo-la-tum in cru-ce pro ho-mi-ne \
+                   cu-ius la-tus per-fo-ra-tum flu-xit a-qua et san-gui-ne es-to no-bis prae-gus-ta-tum in mor-tis ex-a-mi-ne";
+        assert_eq!(detect_lang(&sung(ave)), Lang::La);
+        // Italian liturgy: Latin-looking syllables (mi, su, di) don't count as Latin
+        assert_eq!(detect_lang(&sung("A-gnel-lo di Di-o che to-gli i pec-ca-ti del mon-do ab-bi pie-tà di noi")), Lang::It);
+        assert_eq!(detect_lang(&sung("Glo-ri-a a Di-o nel-l'al-to dei cie-li e pa-ce in ter-ra")), Lang::It);
+        assert_eq!(detect_lang(&sung("When for-ty win-ters shall be-siege thy brow")), Lang::En);
+    }
+
+    #[test]
+    fn latin_words_get_hints() {
+        let p = sung("A-gnus De-i qui tol-lis");
+        let l = word_lyrics(&p[0].notes, Lang::La, &HashMap::new());
+        assert_eq!(l, ["agnus[a JJ u s]", "+", "dei[d e i]", "+", "qui[k w i]", "tollis[t o l l i s]", "+"]);
+        assert_eq!(clean("Dómine", Lang::La), "domine");
     }
 
     #[test]

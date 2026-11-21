@@ -240,7 +240,7 @@ impl Sing {
         }
 
         let src = PathBuf::from(&req.path);
-        let sc = score::read_mscz(&src)?;
+        let sc = score::read_score(&src)?;
         let names: Vec<String> = req.parts.iter().map(|p| p.name.clone()).collect();
         crate::log!("velocità {:.0}%, accompagnamento {}", req.tempo_factor * 100.0, if req.accompaniment { "sì" } else { "no" });
         let no_hints = HashMap::new();

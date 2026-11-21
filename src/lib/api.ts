@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type Lang = "it" | "en";
+export type Lang = "it" | "en" | "la";
 
 export type PartInfo = { name: string; notes: number; syllables: number; sung: boolean; preview: string };
 
@@ -44,7 +44,7 @@ export const api = {
   listSingers: () => invoke<SingersList>("list_singers"),
 };
 
-// --- projects (.musesing) ----------------------------------------------------------------------
+// --- projects (.msng) ----------------------------------------------------------------------
 
 export type PartCfg = { name: string; sing: boolean; singer: string; color: string | null; volume_db: number; pan: number; mute: boolean; solo: boolean };
 export type AccompCfg = { enabled: boolean; volume_db: number; pan: number; mute: boolean; solo: boolean };
@@ -82,12 +82,23 @@ export type Roll = { parts: RollPart[]; tempos: [number, number][] };
 /** Name of the accompaniment track in the mix (project.rs ACCOMPANIMENT). */
 export const ACCOMPANIMENT = "Accompagnamento";
 
+/** Extensions of the scores Muse Sing reads, and of its projects (`.musesing`: older versions). */
+export const SCORE_EXTENSIONS = ["mscz", "mxl", "musicxml", "xml"];
+export const PROJECT_EXTENSION = "msng";
+export const PROJECT_EXTENSIONS = ["msng", "musesing"];
+const extOf = (path: string) => path.split(".").pop()?.toLowerCase() ?? "";
+export const isProjectPath = (path: string) => PROJECT_EXTENSIONS.includes(extOf(path));
+export const isScorePath = (path: string) => SCORE_EXTENSIONS.includes(extOf(path));
+
 export const projectApi = {
-  create: (mscz: string) => invoke<OpenedProject>("project_new", { mscz }),
+  /** New project from a score (MuseScore or MusicXML). */
+  create: (score: string) => invoke<OpenedProject>("project_new", { score }),
   open: (path: string) => invoke<OpenedProject>("project_open", { path }),
   save: (path: string, project: Project, scorePath: string) => invoke<string>("project_save", { path, project, scorePath }),
-  reloadScore: (project: Project, mscz: string) => invoke<OpenedProject>("project_reload_score", { project, mscz }),
+  reloadScore: (project: Project, score: string) => invoke<OpenedProject>("project_reload_score", { project, score }),
   recent: () => invoke<RecentProject[]>("project_recent"),
+  /** Files the Finder asked to open (double click) and not yet opened. */
+  takeOpened: () => invoke<string[]>("take_opened_files"),
   roll: (scorePath: string, tempoFactor: number) => invoke<Roll>("score_roll", { scorePath, tempoFactor }),
 };
 
@@ -128,7 +139,10 @@ export const singApi = {
     invoke<string[]>("sing_export_guides", { mix, dir, ext, othersDb }),
 };
 
-export const LANGS: Record<Lang, string> = { it: "Italiano", en: "English" };
+export const LANGS: Record<Lang, string> = { it: "Italiano", en: "English", la: "Latino (ecclesiastico)" };
+
+/** Dictionary a language is sung with: Latin uses the Italian one. */
+export const dictLang = (lang: Lang): string => (lang === "la" ? "it" : lang);
 
 export function errorText(e: unknown): string {
   return typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);

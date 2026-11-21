@@ -29,11 +29,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ACCOMPANIMENT,
   api,
+  isProjectPath,
+  isScorePath,
+  PROJECT_EXTENSION,
+  PROJECT_EXTENSIONS,
+  SCORE_EXTENSIONS,
   errorText,
   LANGS,
   projectApi,
   singApi,
   type Lang,
+  dictLang,
   type MixPart,
   type OpenedProject,
   type PartCfg,
@@ -66,7 +72,7 @@ function panLabel(p: number) {
 function singerLabel(s: SingerInfo, lang: Lang) {
   const notes = [];
   if (!s.engine) notes.push("non supportato");
-  if (!s.langs.includes(lang)) notes.push(`senza dizionario ${lang}`);
+  if (!s.langs.includes(dictLang(lang))) notes.push(`senza dizionario ${dictLang(lang)}`);
   return notes.length ? `${s.name} (${notes.join(", ")})` : s.name;
 }
 
@@ -149,7 +155,8 @@ function MixControls({
   );
 }
 
-export default function ProjectView({ active }: { active: boolean }) {
+/** `onShow`: bring this view to the front (a file was opened from the Finder). */
+export default function ProjectView({ active, onShow }: { active: boolean; onShow?: () => void }) {
   const [opened, setOpened] = useState<Omit<OpenedProject, "project"> | null>(null);
   const [project, setProjectRaw] = useState<ProjectData | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -233,9 +240,9 @@ export default function ProjectView({ active }: { active: boolean }) {
       setBusy(true);
       try {
         if (play) await singApi.stop();
-        if (path.toLowerCase().endsWith(".musesing")) show(await projectApi.open(path), false);
-        else if (path.toLowerCase().endsWith(".mscz")) show(await projectApi.create(path), true);
-        else throw "Apri un file MuseScore (.mscz) o un progetto Muse Sing (.musesing)";
+        if (isProjectPath(path)) show(await projectApi.open(path), false);
+        else if (isScorePath(path)) show(await projectApi.create(path), true);
+        else throw "Apri una partitura MuseScore (.mscz) o MusicXML (.musicxml, .mxl) o un progetto Muse Sing (.msng)";
         loadRecent();
       } catch (e) {
         setError(errorText(e));
@@ -283,6 +290,8 @@ export default function ProjectView({ active }: { active: boolean }) {
   activeRef.current = active;
   const openRef = useRef(openPath);
   openRef.current = openPath;
+  const onShowRef = useRef(onShow);
+  onShowRef.current = onShow;
 
   useEffect(() => {
     loadSingers();
@@ -294,7 +303,7 @@ export default function ProjectView({ active }: { active: boolean }) {
       else if (t === "leave") setDragging(false);
       else if (t === "drop") {
         setDragging(false);
-        const f = ev.payload.paths.find((p) => /\.(mscz|musesing)$/i.test(p)) ?? ev.payload.paths[0];
+        const f = ev.payload.paths.find((p) => isProjectPath(p) || isScorePath(p)) ?? ev.payload.paths[0];
         if (f) openRef.current(f);
       }
     });
@@ -308,9 +317,22 @@ export default function ProjectView({ active }: { active: boolean }) {
       });
       if (!ok) e.preventDefault();
     });
+    // projects opened from the Finder (double click): at launch, and later while running
+    const takeOpened = async () => {
+      const files = await projectApi.takeOpened().catch(() => [] as string[]);
+      const f = files.find((p) => isProjectPath(p) || isScorePath(p)) ?? files[0];
+      if (!f) return;
+      onShowRef.current?.();
+      openRef.current(f);
+    };
+    // once now and once more when the listener is in place (a file may arrive in between)
+    takeOpened();
+    const unOpen = listen("open-files", takeOpened);
+    unOpen.then(() => takeOpened());
     return () => {
       un.then((f) => f());
       unClose.then((f) => f());
+      unOpen.then((f) => f());
     };
   }, [loadSingers, loadRecent]);
 
@@ -384,12 +406,12 @@ export default function ProjectView({ active }: { active: boolean }) {
   // --- actions -----------------------------------------------------------------------------------
 
   const newFromScore = async () => {
-    const f = await open({ multiple: false, filters: [{ name: "MuseScore", extensions: ["mscz"] }] });
+    const f = await open({ multiple: false, filters: [{ name: "Partitura MuseScore o MusicXML", extensions: SCORE_EXTENSIONS }] });
     if (typeof f === "string") openPath(f);
   };
 
   const openProject = async () => {
-    const f = await open({ multiple: false, filters: [{ name: "Progetto Muse Sing", extensions: ["musesing"] }] });
+    const f = await open({ multiple: false, filters: [{ name: "Progetto Muse Sing", extensions: PROJECT_EXTENSIONS }] });
     if (typeof f === "string") openPath(f);
   };
 
@@ -398,8 +420,8 @@ export default function ProjectView({ active }: { active: boolean }) {
     let path = opened.path;
     if (!path || forceDialog) {
       const picked = await save({
-        defaultPath: join(opened.default_dir, `${fileSafe(project.title)}.musesing`),
-        filters: [{ name: "Progetto Muse Sing", extensions: ["musesing"] }],
+        defaultPath: join(opened.default_dir, `${fileSafe(project.title)}.${PROJECT_EXTENSION}`),
+        filters: [{ name: "Progetto Muse Sing", extensions: [PROJECT_EXTENSION] }],
       });
       if (!picked) return;
       path = picked;
@@ -432,7 +454,7 @@ export default function ProjectView({ active }: { active: boolean }) {
 
   const reloadScore = async () => {
     if (!project) return;
-    const f = await open({ multiple: false, filters: [{ name: "MuseScore", extensions: ["mscz"] }] });
+    const f = await open({ multiple: false, filters: [{ name: "Partitura MuseScore o MusicXML", extensions: SCORE_EXTENSIONS }] });
     if (typeof f !== "string") return;
     setError(null);
     setBusy(true);
@@ -593,7 +615,7 @@ export default function ProjectView({ active }: { active: boolean }) {
     <main className={`relative flex-1 space-y-4 overflow-auto p-5 ${active ? "" : "hidden"}`}>
       {dragging && (
         <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-violet-500 bg-violet-500/10 text-lg font-medium text-violet-700 dark:text-violet-300">
-          Rilascia qui una partitura (.mscz) o un progetto (.musesing)
+          Rilascia qui una partitura (.mscz, .musicxml, .mxl) o un progetto (.msng)
         </div>
       )}
 
@@ -627,7 +649,7 @@ export default function ProjectView({ active }: { active: boolean }) {
             className="flex w-full flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-zinc-300 py-14 text-zinc-500 hover:border-violet-400 hover:text-violet-600 dark:border-zinc-700"
           >
             {busy ? <Loader2 className="h-8 w-8 animate-spin" /> : <Upload className="h-8 w-8" />}
-            <span className="text-base font-medium">Trascina qui una partitura MuseScore (.mscz) o un progetto Muse Sing</span>
+            <span className="text-base font-medium">Trascina qui una partitura MuseScore (.mscz) o MusicXML, o un progetto Muse Sing (.msng)</span>
             <span>oppure clicca per scegliere la partitura</span>
           </button>
           {recent.length > 0 && (

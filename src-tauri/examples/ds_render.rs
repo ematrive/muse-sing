@@ -26,8 +26,8 @@ fn main() {
         std::process::exit(2);
     }
     let (score_path, vb_dir, out) = (PathBuf::from(pos[0]), PathBuf::from(pos[1]), PathBuf::from(pos[2]));
-    let sc = score::read_mscz(&score_path).expect("score");
-    let lang = match opt("--lang").as_deref() { Some("it") => Lang::It, Some("en") => Lang::En, _ => detect_lang(&sc.parts) };
+    let sc = score::read_score(&score_path).expect("score");
+    let lang = match opt("--lang").as_deref() { Some("it") => Lang::It, Some("en") => Lang::En, Some("la") => Lang::La, _ => detect_lang(&sc.parts) };
     let parts = opt("--part").map(|p| vec![p]);
     let hints = HashMap::new();
     let project = ustx::build(&sc, &ustx::Options { lang, singer: "", part_singers: None, parts: parts.as_deref(), hints: &hints, fallback_name: "score" });

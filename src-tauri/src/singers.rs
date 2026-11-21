@@ -142,6 +142,8 @@ fn find_dicts(dir: &Path, depth: usize, langs: &mut Vec<String>) {
 /// First-time choice for a language when the user hasn't picked one yet: for a `.ustx`
 /// (OpenUtau's singers) or for Muse Sing's engine.
 pub fn suggest(singers: &[SingerInfo], lang: &str, engine: bool) -> Option<String> {
+    // Latin is sung with the Italian dictionary
+    let lang = if lang == "la" { "it" } else { lang };
     let preferred = match lang {
         "en" | "it" => "tiger",
         _ => "",

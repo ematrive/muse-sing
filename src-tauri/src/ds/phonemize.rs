@@ -86,6 +86,7 @@ impl LangG2p {
 
     /// DiffSingerG2pPhonemizer.LoadG2p for the duration model folder.
     pub fn load(dur: &SubModel, lang: Lang) -> Result<LangG2p> {
+        let lang = lang.g2p_lang();
         let dict_name = format!("dsdict-{}.yaml", lang.code());
         let path = [dict_name.as_str(), "dsdict.yaml"]
             .iter()
@@ -106,7 +107,7 @@ impl LangG2p {
         dict.add_symbol_vowel("AP", true);
 
         let (base, vowels, consonants): (Arc<dyn G2p>, &[&str], &[&str]) = match lang {
-            Lang::It => (g2p::italian()?, BASE_VOWELS_IT, BASE_CONSONANTS_IT),
+            Lang::It | Lang::La => (g2p::italian()?, BASE_VOWELS_IT, BASE_CONSONANTS_IT),
             Lang::En => (g2p::arpabet_plus()?, BASE_VOWELS_EN, BASE_CONSONANTS_EN),
         };
         for v in vowels {
@@ -123,7 +124,7 @@ impl LangG2p {
             }
             let prefixed = format!("{code}/{ph}");
             let fallback = match lang {
-                Lang::It => FALLBACK_IT.iter().find(|(f, _)| f == ph).map(|(_, t)| t.to_string()),
+                Lang::It | Lang::La => FALLBACK_IT.iter().find(|(f, _)| f == ph).map(|(_, t)| t.to_string()),
                 Lang::En => None,
             }
             .filter(|t| dur.tokens.contains_key(t));
@@ -454,6 +455,8 @@ fn arpa_plus_fix(lg: &LangG2p, phs: Vec<(String, i64)>, has_prev_neighbour: bool
 /// Phonemizes a whole track: groups, phrases split at rests, duration model per phrase, then
 /// phoneme ends as UPhoneme.ValidateDuration computes them.
 pub fn phonemize(vb: &Voicebank, lang: Lang, notes: &[PNote], axis: &TimeAxis, speaker: &str) -> Result<Phonemized> {
+    // Latin lyrics come with their phonemes as hints: sung with the Italian dictionary
+    let lang = lang.g2p_lang();
     let dur = vb.duration()?;
     let lg = LangG2p::load(dur, lang)?;
     let ctx = Ctx { dur, lg: &lg, axis, speaker };

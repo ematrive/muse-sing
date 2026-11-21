@@ -6,7 +6,7 @@ use tauri::Manager;
 
 use crate::error::{Error, Result};
 use crate::lyrics::{detect_lang, word_lyrics, Lang};
-use crate::score::read_mscz;
+use crate::score::read_score;
 use crate::singers::{self, SingerInfo};
 
 #[derive(Serialize)]
@@ -41,9 +41,6 @@ fn stem(path: &Path) -> String {
 #[tauri::command]
 pub fn analyze(path: String) -> Result<Analysis> {
     let p = PathBuf::from(&path);
-    if p.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref() != Some("mscz") {
-        return Err(Error::Format("serve un file MuseScore (.mscz)".into()));
-    }
     analysis_of(&p, &p)
 }
 
@@ -51,7 +48,7 @@ pub fn analyze(path: String) -> Result<Analysis> {
 /// is a project's working copy).
 fn analysis_of(p: &Path, display: &Path) -> Result<Analysis> {
     let path = p.to_string_lossy().into_owned();
-    let score = read_mscz(p)?;
+    let score = read_score(p)?;
     let lang = detect_lang(&score.parts);
     let no_hints = HashMap::new();
     let parts = score
@@ -194,8 +191,11 @@ pub async fn list_singers(app: tauri::AppHandle) -> Result<SingersList> {
         let singers = all_singers(&app);
         let prefs = load_prefs(&app);
         let mut selected = HashMap::new();
-        for lang in ["it", "en"] {
-            let saved = prefs.singer.get(lang).filter(|id| singers.iter().any(|s| &s.id == *id)).cloned();
+        for lang in ["it", "en", "la"] {
+            // Latin falls back to the Italian choice
+            let saved = [lang, if lang == "la" { "it" } else { lang }]
+                .iter()
+                .find_map(|l| prefs.singer.get(*l).filter(|id| singers.iter().any(|s| &s.id == *id)).cloned());
             if let Some(id) = saved.or_else(|| singers::suggest(&singers, lang, true)).or_else(|| singers::suggest(&singers, lang, false)) {
                 selected.insert(lang.to_string(), id);
             }
@@ -547,7 +547,7 @@ pub async fn sing_export(state: State<'_, SingState>, mix: Vec<MixPart>, path: S
 }
 
 // ---------------------------------------------------------------------------------------------
-// Projects (.musesing)
+// Projects (.msng)
 
 use crate::project::{self, PartCfg, Project};
 
@@ -575,7 +575,10 @@ fn cache_dir(app: &tauri::AppHandle) -> Result<PathBuf> {
 
 fn remember_project(app: &tauri::AppHandle, path: &str, title: &str) {
     let mut prefs = load_prefs(app);
-    prefs.recent_projects.retain(|p| p.path != path);
+    // an old .musesing saved again as .msng: the old file leaves the list, so it isn't reopened
+    // and saved over the newer one by mistake
+    let legacy: Vec<String> = project::LEGACY_EXTENSIONS.iter().map(|e| Path::new(path).with_extension(e).to_string_lossy().into_owned()).collect();
+    prefs.recent_projects.retain(|p| p.path != path && !legacy.contains(&p.path));
     prefs.recent_projects.insert(0, RecentProject { path: path.to_string(), title: title.to_string() });
     prefs.recent_projects.truncate(10);
     save_prefs(app, &prefs);
@@ -593,11 +596,11 @@ fn parent_dir(p: &Path) -> String {
     p.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// New project from a MuseScore file (singers are filled in by the UI from the saved choices).
+/// New project from a MuseScore or MusicXML file (singers are filled in by the UI from the saved choices).
 #[tauri::command]
-pub async fn project_new(app: tauri::AppHandle, mscz: String) -> Result<OpenedProject> {
+pub async fn project_new(app: tauri::AppHandle, score: String) -> Result<OpenedProject> {
     blocking(move || {
-        let src = PathBuf::from(&mscz);
+        let src = PathBuf::from(&score);
         let bytes = std::fs::read(&src)?;
         let wc = project::working_copy(&cache_dir(&app)?, &bytes)?;
         let analysis = analysis_of(&wc, &src)?;
@@ -622,7 +625,7 @@ pub async fn project_open(app: tauri::AppHandle, path: String) -> Result<OpenedP
     .await
 }
 
-/// Saves the project with its score; returns the path written (with the .musesing extension).
+/// Saves the project with its score; returns the path written (always with the .msng extension).
 #[tauri::command]
 pub async fn project_save(app: tauri::AppHandle, path: String, project: Project, score_path: String) -> Result<String> {
     blocking(move || {
@@ -639,12 +642,12 @@ pub async fn project_save(app: tauri::AppHandle, path: String, project: Project,
     .await
 }
 
-/// Replaces the project's score with a newer version of the .mscz, keeping the settings of the
-/// parts that are still there.
+/// Replaces the project's score with a newer version (MuseScore or MusicXML), keeping the settings
+/// of the parts that are still there.
 #[tauri::command]
-pub async fn project_reload_score(app: tauri::AppHandle, project: Project, mscz: String) -> Result<OpenedProject> {
+pub async fn project_reload_score(app: tauri::AppHandle, project: Project, score: String) -> Result<OpenedProject> {
     blocking(move || {
-        let src = PathBuf::from(&mscz);
+        let src = PathBuf::from(&score);
         let bytes = std::fs::read(&src)?;
         let wc = project::working_copy(&cache_dir(&app)?, &bytes)?;
         let analysis = analysis_of(&wc, &src)?;
@@ -654,6 +657,30 @@ pub async fn project_reload_score(app: tauri::AppHandle, project: Project, mscz:
         Ok(OpenedProject { project, path: None, score_path: wc.to_string_lossy().into_owned(), analysis, default_dir: parent_dir(&src) })
     })
     .await
+}
+
+/// Files the system asked the app to open (double click in the Finder) that the window has not
+/// taken yet: at launch the request arrives before the page is listening.
+#[derive(Default)]
+pub struct OpenedFiles(pub Mutex<Vec<String>>);
+
+/// Event sent to the window when the system asks to open files while the app is running.
+pub const OPEN_FILES_EVENT: &str = "open-files";
+
+/// Remembers files to open and tells the window (which takes them with `take_opened_files`).
+pub fn files_opened(app: &tauri::AppHandle, paths: Vec<String>) {
+    if paths.is_empty() {
+        return;
+    }
+    if let Some(state) = app.try_state::<OpenedFiles>() {
+        state.0.lock().unwrap().extend(paths);
+    }
+    let _ = app.emit(OPEN_FILES_EVENT, ());
+}
+
+#[tauri::command]
+pub fn take_opened_files(state: State<'_, OpenedFiles>) -> Vec<String> {
+    std::mem::take(&mut *state.0.lock().unwrap())
 }
 
 #[tauri::command]
@@ -692,7 +719,7 @@ pub struct Roll {
 #[tauri::command]
 pub async fn score_roll(score_path: String, tempo_factor: f64) -> Result<Roll> {
     blocking(move || {
-        let score = read_mscz(Path::new(&score_path))?;
+        let score = read_score(Path::new(&score_path))?;
         let ticks = |b: crate::score::Beats| *b.numer() as f64 / *b.denom() as f64 * crate::ustx::TICKS as f64;
         let tempos: Vec<(i64, f64)> =
             score.tempos.iter().map(|(b, q)| (ticks(*b).round() as i64, q * 60.0 * tempo_factor.clamp(0.25, 2.0))).collect();

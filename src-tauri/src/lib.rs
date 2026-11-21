@@ -5,8 +5,10 @@ pub mod corpus;
 pub mod ds;
 pub mod edits;
 pub mod error;
+pub mod latin;
 pub mod lyrics;
 pub mod mix;
+pub mod musicxml;
 pub mod project;
 pub mod score;
 pub mod sing;
@@ -21,6 +23,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // managed before setup: on macOS the "open file" event can arrive first
+        .manage(commands::OpenedFiles::default())
         .setup(|app| {
             use tauri::Manager;
             app.manage(commands::AudioState::new(app.handle().clone()));
@@ -55,8 +59,17 @@ pub fn run() {
             commands::project_save,
             commands::project_reload_score,
             commands::project_recent,
+            commands::take_opened_files,
             commands::score_roll,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, _event| {
+            // double click on a project in the Finder (or "Open with"): macOS sends the files here
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            if let tauri::RunEvent::Opened { urls } = _event {
+                let paths = urls.iter().filter_map(|u| u.to_file_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect();
+                commands::files_opened(_app, paths);
+            }
+        });
 }

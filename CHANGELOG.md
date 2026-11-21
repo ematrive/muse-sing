@@ -2,6 +2,13 @@
 
 Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'intestazione dell'app, accanto a «Manuale».
 
+## Prossima versione
+
+### Nuovo
+- **Latino:** nuova lingua «Latino (ecclesiastico)» per i canti sacri, con la pronuncia all'italiana (*excelsis*, *agnus*, *gratia*, *caeli*…). Viene riconosciuta da sola dalle parole del testo e si canta con i cantanti italiani.
+- **Partiture MusicXML:** oltre ai `.mscz` si possono aprire file `.musicxml`, `.mxl` e `.xml`, esportati da Finale, Sibelius, Dorico, MuseScore o da programmi che leggono i PDF.
+- **Progetti `.msng`:** i progetti hanno un'estensione più corta e si aprono con un doppio clic nel Finder. I `.musesing` si aprono ancora e al salvataggio diventano `.msng`.
+
 ## 0.7.0 — 16 novembre 2026
 
 ### Nuovo

@@ -7,7 +7,7 @@ use muse_sing_lib::{lyrics, score, ustx};
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let src = Path::new(&a[1]);
-    let s = score::read_mscz(src).unwrap();
+    let s = score::read_score(src).unwrap();
     let lang = lyrics::detect_lang(&s.parts);
     let mut hints = HashMap::new();
     if let Some(h) = a.get(4) {

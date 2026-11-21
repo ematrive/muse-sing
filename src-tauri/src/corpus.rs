@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::lyrics::it_g2p_word;
-use crate::score::{read_mscz, Beats, Syllabic};
+use crate::score::{read_score, Beats, Syllabic};
 use crate::voice::slug;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -344,7 +344,7 @@ fn to_f(b: Beats) -> f64 {
 /// Phrases of one sung part of a score: cut at rests (≥ an eighth) or when longer than 12 s; transposed by
 /// octaves into the singer's range; repeated passages with the same words only once.
 pub fn piece_phrases(path: &Path, part_name: &str, p: &VoiceProfile) -> Result<(String, Vec<Phrase>)> {
-    let score = read_mscz(path)?;
+    let score = read_score(path)?;
     let title = score
         .title
         .clone()

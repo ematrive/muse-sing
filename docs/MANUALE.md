@@ -333,7 +333,7 @@ Apri la cartella dall'icona in alto a sinistra e mandala intera a chi prepara il
 ### Il microfono non sente (Canta e controlla, Registra)
 
 Se la barra del livello resta ferma quando parli, il Mac non passa il suono a Muse Sing. Muse Sing lo segnala anche mentre canti.
-1. Apri **Impostazioni di Sistema → Privacy e sicurezza → Microfono** e attiva **Muse Sing**. Se avvii l'app dal Terminale (sviluppo), deve essere attivo il **Terminale**.
+1. Apri **Impostazioni di Sistema → Privacy e sicurezza → Microfono** e attiva **Muse Sing**.
 2. Spegni e riaccendi il microfono in Muse Sing, oppure chiudi e riapri l'app.
 3. Prova a scegliere un altro microfono nel menu (per esempio quello del Mac invece di quello delle cuffie).
 

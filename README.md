@@ -52,6 +52,8 @@ Durata: circa 37 min di esercizi, più i brani. Per una prova bastano il registr
 
 Il primo avvio chiede il permesso per il microfono (`Info.plist` + `Entitlements.plist`). Se lo hai negato: Impostazioni di Sistema → Privacy e sicurezza → Microfono.
 
+Con `pnpm tauri dev` il binario di sviluppo porta lo stesso `Info.plist` (stesso identificativo `app.musesing.desktop`), quindi macOS lo vede come «Muse Sing»; ma la firma è diversa da quella dell'app installata e il permesso già dato non vale, senza che il Mac chieda di nuovo. Si azzera con `tccutil reset Microphone app.musesing.desktop`: al prossimo avvio (dev o app installata) macOS richiede il permesso. Passando dall'una all'altra può servire ripeterlo.
+
 ## Voicebank consigliati (uso non commerciale, citando l'autore)
 
 | Lingua | Voicebank | Download |

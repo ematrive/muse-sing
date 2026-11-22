@@ -626,7 +626,7 @@ export function Session({
                   ))}
                 </div>
                 <button
-                  className={`btn px-2 text-xs ${looping ? "border-violet-400 bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" : ""}`}
+                  className={`btn px-2 ${looping ? "border-violet-400 bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" : ""}`}
                   onClick={() => setLooping(!looping)}
                   title="Ripeti la guida finché non la fermi"
                 >
@@ -663,7 +663,7 @@ export function Session({
             <div className="card space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  className={`inline-flex min-w-32 items-center justify-center gap-1.5 rounded-md px-4 py-2 font-semibold text-white ${
+                  className={`btn-primary min-w-32 justify-center ${
                     running === "take" ? "bg-zinc-700 hover:bg-zinc-600" : "bg-red-600 hover:bg-red-500"
                   }`}
                   onClick={record}
@@ -715,7 +715,7 @@ export function Session({
               {advance && (
                 <div className="flex items-center gap-2 rounded-md bg-emerald-50 p-2 text-sm text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
                   <CheckCircle2 className="h-4 w-4" /> Registrata bene: passo alla prossima frase…
-                  <button className="btn ml-auto py-0.5 text-xs" onClick={() => setAdvance(false)}>
+                  <button className="btn ml-auto" onClick={() => setAdvance(false)}>
                     Resta qui (Esc)
                   </button>
                 </div>

@@ -391,16 +391,16 @@ export function Editor({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <span className="font-semibold">Ritocchi</span>
-        <select className="field w-40 py-1" value={part} onChange={(ev) => setPart(ev.target.value)} aria-label="Voce da ritoccare">
+        <select className="field w-40" value={part} onChange={(ev) => setPart(ev.target.value)} aria-label="Voce da ritoccare">
           {parts.map((p) => (
             <option key={p}>{p}</option>
           ))}
         </select>
-        <div className="flex overflow-hidden rounded-md border border-zinc-300 text-xs dark:border-zinc-700">
+        <div className="seg">
           {tools.map(([t, label]) => (
             <button
               key={t}
-              className={`px-2.5 py-1 ${tool === t ? "bg-violet-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+              className={`px-3 ${tool === t ? "bg-violet-600 text-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
               onClick={() => {
                 setTool(t);
                 setVibrato(false);
@@ -706,8 +706,8 @@ function WordPanel({
         {table && (
           <span className="text-xs text-zinc-500">
             In tutto il brano «{word.word}» = <span className="font-mono">{table}</span>{" "}
-            <button className="text-violet-600 hover:underline" onClick={removeFromTable}>
-              togli
+            <button className="btn ml-1" onClick={removeFromTable}>
+              Togli
             </button>
           </span>
         )}

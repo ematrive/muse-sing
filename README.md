@@ -52,7 +52,7 @@ Durata: circa 37 min di esercizi, più i brani. Per una prova bastano il registr
 
 Il primo avvio chiede il permesso per il microfono (`Info.plist` + `Entitlements.plist`). Se lo hai negato: Impostazioni di Sistema → Privacy e sicurezza → Microfono.
 
-Con `pnpm tauri dev` il binario di sviluppo porta lo stesso `Info.plist` (stesso identificativo `app.musesing.desktop`), quindi macOS lo vede come «Muse Sing»; ma la firma è diversa da quella dell'app installata e il permesso già dato non vale, senza che il Mac chieda di nuovo. Si azzera con `tccutil reset Microphone app.musesing.desktop`: al prossimo avvio (dev o app installata) macOS richiede il permesso. Passando dall'una all'altra può servire ripeterlo.
+Con `pnpm tauri dev` il binario non è dentro un'app: macOS attribuisce il permesso all'app da cui lo avvii (Terminale, iTerm, VS Code…), e la richiesta e la voce nelle Impostazioni sono a nome di quella. Muse Sing chiede il permesso esplicitamente prima di aprire il microfono (`mic_access.rs`) e, se è negato, il messaggio dice quale app attivare. Per farlo richiedere da capo: `tccutil reset Microphone <bundle id dell'app>` (per esempio `com.apple.Terminal`, `com.googlecode.iterm2`, `com.microsoft.VSCode`).
 
 ## Voicebank consigliati (uso non commerciale, citando l'autore)
 

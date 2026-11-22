@@ -205,9 +205,8 @@ export function CheckPanel({
                 showHint={false}
               />
               {checking === null && (
-                <button className="text-xs text-zinc-500 hover:underline" onClick={closeMic}>
-                  <MicOff className="mr-1 inline h-3.5 w-3.5" />
-                  spegni il microfono
+                <button className="btn" onClick={closeMic}>
+                  <MicOff className="h-4 w-4" /> Spegni il microfono
                 </button>
               )}
             </div>
@@ -233,7 +232,7 @@ export function CheckPanel({
             <label className="flex items-center gap-2 text-xs text-zinc-500">
               la tua voce nella base
               <select
-                className="field w-auto py-0.5"
+                className="field w-auto"
                 aria-label="La tua voce nella base"
                 value={ownVoice}
                 onChange={(e) => onOwnVoice(e.target.value as OwnVoice)}
@@ -255,8 +254,8 @@ export function CheckPanel({
             <div className="flex items-start gap-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
-                Non arriva suono dal microfono. Su macOS apri <b>Impostazioni di Sistema → Privacy e sicurezza → Microfono</b> e attiva Muse Sing (o il Terminale, se
-                avvii l'app da lì), poi riaccendi il microfono. Oppure scegli un altro microfono qui sopra.
+                Non arriva suono dal microfono. Su macOS apri <b>Impostazioni di Sistema → Privacy e sicurezza → Microfono</b> e attiva Muse Sing (o l'app da cui
+                l'hai avviata, in sviluppo), poi riaccendi il microfono. Oppure scegli un altro microfono qui sopra.
               </div>
             </div>
           )}
@@ -264,7 +263,7 @@ export function CheckPanel({
             <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="font-medium">{summaryText(summary)}</span>
-                <button className="btn ml-auto py-1" onClick={onReplay} disabled={checking !== null}>
+                <button className="btn ml-auto" onClick={onReplay} disabled={checking !== null}>
                   <Play className="h-4 w-4" /> Riascolta
                 </button>
                 <button className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200" onClick={onClear} title="Togli i colori dal rullo">

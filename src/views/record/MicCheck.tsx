@@ -99,7 +99,7 @@ export function MicCheck({
         <div className="flex items-start gap-2 rounded-md bg-red-50 p-2 text-xs text-red-800 dark:bg-red-950/40 dark:text-red-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="flex-1">{mic.state === "error" ? mic.error : issue}</div>
-          <button className="btn shrink-0 py-0.5 text-xs" onClick={retry}>
+          <button className="btn shrink-0" onClick={retry}>
             <RefreshCw className="h-3.5 w-3.5" /> Riprova
           </button>
         </div>

@@ -1036,8 +1036,8 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
               <section className="card">
                 <div className="label flex items-center justify-between">
                   <span>Voci e cantanti</span>
-                  <button className="text-violet-600 hover:underline" onClick={loadSingers} title="Rileggi i cantanti installati" disabled={rendering}>
-                    <RefreshCw className="inline h-3 w-3" /> aggiorna cantanti
+                  <button className="btn text-[13px] text-zinc-800 dark:text-zinc-200" onClick={loadSingers} title="Rileggi i cantanti installati" disabled={rendering}>
+                    <RefreshCw className="h-4 w-4" /> Aggiorna cantanti
                   </button>
                 </div>
                 {singers && diffsinger.length === 0 && (
@@ -1086,7 +1086,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                           </div>
                           <div className="flex shrink-0 gap-1.5">
                             <select
-                              className="field w-28 py-1"
+                              className="field w-28"
                               value={p.played ? "suona" : "canta"}
                               disabled={!p.sing || rendering}
                               onChange={(e) => setPart(p.name, { played: e.target.value === "suona" })}
@@ -1099,7 +1099,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                             {!p.played && (
                               <>
                                 <select
-                                  className="field w-52 py-1"
+                                  className="field w-52"
                                   value={p.singer}
                                   disabled={!p.sing || rendering}
                                   onChange={(e) => setPart(p.name, { singer: e.target.value, color: null })}
@@ -1114,7 +1114,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                                 </select>
                                 {s && s.colors.length > 1 && (
                                   <select
-                                    className="field w-32 py-1"
+                                    className="field w-32"
                                     value={p.color ?? ""}
                                     disabled={!p.sing || rendering}
                                     onChange={(e) => setPart(p.name, { color: e.target.value || null })}
@@ -1129,7 +1129,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                                   </select>
                                 )}
                                 <select
-                                  className="field w-28 py-1"
+                                  className="field w-28"
                                   value={p.voices ?? 1}
                                   disabled={!p.sing || rendering}
                                   onChange={(e) => setPart(p.name, { voices: Number(e.target.value) })}
@@ -1174,7 +1174,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                                   <label key={name} className="flex items-center gap-1.5 text-xs text-zinc-500">
                                     {name}
                                     <select
-                                      className="field w-40 py-0.5"
+                                      className="field w-40"
                                       value={instrumentOf(name)}
                                       disabled={rendering}
                                       onChange={(e) =>
@@ -1194,7 +1194,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                             )
                           ) : (
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                              <button className="btn py-0.5 text-xs" onClick={installSoundfont} disabled={!!sfProgress || rendering}>
+                              <button className="btn" onClick={installSoundfont} disabled={!!sfProgress || rendering}>
                                 {sfProgress ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Scarica strumenti veri
                               </button>
                               {sfProgress ? tigerText(sfProgress) : "organo a canne, pianoforte, archi… (31 MB, GeneralUser GS)"}
@@ -1476,7 +1476,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                       <Headphones className="h-4 w-4" /> Basi di studio…
                     </button>
                     <select
-                      className="field w-auto py-0.5 text-xs"
+                      className="field w-auto"
                       aria-label="Tipo di basi"
                       value={project.guides ?? "evidenza"}
                       onChange={(e) => setProject((p) => ({ ...p, guides: e.target.value as GuideKind }))}
@@ -1487,7 +1487,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                     </select>
                     <label className={`flex items-center gap-2 text-xs text-zinc-500 ${(project.guides ?? "evidenza") === "senza" ? "hidden" : ""}`}>
                       altre voci
-                      <select className="field w-24 py-0.5" value={guideDb} onChange={(e) => setGuideDb(Number(e.target.value))}>
+                      <select className="field w-24" value={guideDb} onChange={(e) => setGuideDb(Number(e.target.value))}>
                         {[-6, -10, -15, -20].map((d) => (
                           <option key={d} value={d}>
                             {d} dB

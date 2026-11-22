@@ -27,6 +27,10 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 - **Scarica Tiger:** se non c'è nessun cantante, un pulsante scarica TIGER DS dal sito dell'autore e lo installa, senza comandi nel Terminale.
 - **Progetti `.msng`:** i progetti hanno un'estensione più corta e si aprono con un doppio clic nel Finder. I `.musesing` si aprono ancora e al salvataggio diventano `.msng`.
 
+### Migliorato
+- **Controlli tutti della stessa altezza:** pulsanti, menu a tendina e campi hanno un'unica altezza e lo stesso aspetto anche nell'app per Mac, così le file di controlli sono allineate. «Spegni il microfono», «Aggiorna cantanti», «Mostra nel Finder» e i comandi accesa/solo del mixer ora sono pulsanti.
+- **Permesso del microfono:** Muse Sing lo chiede a macOS prima di accendere il microfono e, se manca, il messaggio dice quale app attivare nelle Impostazioni.
+
 ## 0.7.0 — 16 novembre 2026
 
 ### Nuovo

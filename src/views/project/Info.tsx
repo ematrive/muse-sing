@@ -86,9 +86,8 @@ export function Info({
             {path ? (
               <span className="flex flex-wrap items-center gap-2">
                 <span className="break-all select-text">{path}</span>
-                <button className="text-xs text-violet-700 hover:underline dark:text-violet-300" onClick={() => revealItemInDir(path)}>
-                  <FolderOpen className="mr-1 inline h-3.5 w-3.5" />
-                  mostra nel Finder
+                <button className="btn" onClick={() => revealItemInDir(path)}>
+                  <FolderOpen className="h-4 w-4" /> Mostra nel Finder
                 </button>
               </span>
             ) : (

@@ -11,6 +11,7 @@ pub mod instruments;
 pub mod latin;
 pub mod lyrics;
 pub mod marks;
+pub mod mic_access;
 pub mod mix;
 pub mod musicxml;
 pub mod pitch;

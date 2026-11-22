@@ -62,7 +62,7 @@ export function MixControls({
         <span className="w-10 tabular-nums">{panLabel(pan)}</span>
       </label>
       <button
-        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${mute ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "hover:text-zinc-800 dark:hover:text-zinc-200"}`}
+        className={`btn w-24 justify-center text-zinc-700 dark:text-zinc-300 ${mute ? "bg-zinc-200 dark:bg-zinc-700" : ""}`}
         onClick={() => onChange({ mute: !mute })}
         disabled={disabled}
         title="Spegni questa traccia (in ascolto, in Canta e controlla e nei file)"
@@ -71,7 +71,7 @@ export function MixControls({
         {mute ? "spenta" : "accesa"}
       </button>
       <button
-        className={`rounded px-1.5 py-0.5 font-semibold ${solo ? "bg-amber-400 text-amber-950" : "hover:text-zinc-800 dark:hover:text-zinc-200"}`}
+        className={`btn justify-center text-zinc-700 dark:text-zinc-300 ${solo ? "border-amber-500 bg-amber-400 text-amber-950 hover:bg-amber-300 dark:bg-amber-400 dark:text-amber-950" : ""}`}
         onClick={() => onChange({ solo: !solo })}
         disabled={disabled}
         title="Ascolta solo le tracce con «solo» acceso"
@@ -182,7 +182,7 @@ export function Mixer({
         </Row>
         <Row name="Ambiente">
           <select
-            className="field w-40 py-0.5"
+            className="field w-40"
             aria-label="Ambiente"
             title="Il riverbero di una stanza o di una chiesa"
             value={ambience}

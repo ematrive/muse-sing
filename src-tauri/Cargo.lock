@@ -2412,12 +2412,14 @@ dependencies = [
 name = "muse-sing"
 version = "0.7.0"
 dependencies = [
+ "block2",
  "claxon",
  "cpal",
  "flacenc",
  "hound",
  "mp3lame-encoder",
  "num-rational",
+ "objc2",
  "ort",
  "reqwest",
  "roxmltree",

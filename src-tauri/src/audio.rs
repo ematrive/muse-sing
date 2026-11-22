@@ -263,9 +263,12 @@ fn pick_output(want: Option<&str>) -> Option<(cpal::Device, DevInfo)> {
 
 /// An audio error in Italian, with cpal's kind and message kept for diagnosis.
 fn audio_err(what: &str, e: &cpal::Error) -> Error {
+    let owner;
     let hint = match e.kind() {
         ErrorKind::PermissionDenied => {
-            "Muse Sing non ha il permesso: apri Impostazioni di Sistema → Privacy e sicurezza → Microfono e attiva Muse Sing"
+            let app = crate::mic_access::owner();
+            owner = format!("«{app}» non ha il permesso: apri Impostazioni di Sistema → Privacy e sicurezza → Microfono e attiva «{app}»");
+            owner.as_str()
         }
         ErrorKind::DeviceBusy => "il dispositivo è occupato o non si è ancora liberato, riprova tra un attimo",
         ErrorKind::DeviceNotAvailable => "il dispositivo non è disponibile (scollegato o spento?)",
@@ -597,6 +600,8 @@ impl Engine {
     }
 
     fn open_input(&self, want: Option<&str>) -> Result<Input> {
+        // without the permission CoreAudio records silence and doesn't always show the macOS dialog
+        crate::mic_access::ensure()?;
         let (dev, info, switched) = with_retry(|| {
             pick_input(want).ok_or_else(|| cpal::Error::with_message(ErrorKind::DeviceNotAvailable, "nessun microfono"))
         })

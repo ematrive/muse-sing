@@ -89,9 +89,9 @@ fn renders_mixes_and_reuses_the_cache() {
     let entries: Vec<project::AudioEntry> = sing
         .last_parts()
         .into_iter()
-        .map(|(part, key)| {
-            let (flac, scale, info) = sing.part_audio(key).expect("in the cache");
-            project::AudioEntry { meta: project::AudioPart { part, key: format!("{key:016x}"), scale }, flac, info }
+        .map(|last| {
+            let (flac, scale, info) = sing.part_audio(&last).expect("in the cache");
+            project::AudioEntry { meta: project::AudioPart { part: last.part, key: format!("{:016x}", last.portable), scale }, flac, info }
         })
         .collect();
     assert_eq!(entries.len(), 1);
@@ -101,13 +101,29 @@ fn renders_mixes_and_reuses_the_cache() {
     let sizes = project::sizes(&file).unwrap();
     eprintln!("project with one voice of {secs:.0} s: {} KB (audio {} KB)", sizes.total / 1024, sizes.audio / 1024);
     std::fs::remove_dir_all(&cache).unwrap();
+    // saving after «Svuota la cache»: the voices come from memory
+    assert!(sing.last_parts().iter().all(|l| sing.part_audio(l).is_some()), "from the tracks in memory");
+    std::fs::remove_dir_all(&cache).ok();
     let fresh = Sing::new(Some(cache.clone()));
     for e in project::audio(&file).unwrap() {
         fresh.store_part_audio(u64::from_str_radix(&e.meta.key, 16).unwrap(), &e.flac, e.meta.scale, &e.info).unwrap();
     }
+    // as on another Mac: the same voicebank in another folder, with other file dates
+    let elsewhere = cache.with_extension("vb");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    for e in std::fs::read_dir(&vb).unwrap().flatten() {
+        let to = elsewhere.join(e.file_name());
+        if e.file_type().unwrap().is_file() && matches!(e.file_name().to_str(), Some("dsconfig.yaml" | "character.yaml")) {
+            std::fs::copy(e.path(), &to).unwrap();
+        } else {
+            std::os::unix::fs::symlink(e.path(), &to).unwrap();
+        }
+    }
+    let moved = SingerInfo { path: elsewhere.to_string_lossy().into_owned(), ..singer.clone() };
     let t = std::time::Instant::now();
     let job = fresh.begin();
-    fresh.run(job, &only, std::slice::from_ref(&singer), &|p| assert!(p.cached)).unwrap().expect("from the project's voices");
+    fresh.run(job, &only, std::slice::from_ref(&moved), &|p| assert!(p.cached)).unwrap().expect("from the project's voices");
+    std::fs::remove_dir_all(&elsewhere).ok();
     assert!(t.elapsed().as_secs_f64() < 5.0);
     let after = fresh.with_tracks(|t| t.iter().find(|(n, _)| n == "Soprano").map(|(_, s)| s.to_vec())).unwrap().unwrap();
     assert_eq!(after.len(), before.len());

@@ -247,7 +247,7 @@ mockIPC(
         selected: { it: "TIGER_DS_v106", en: "TIGER_DS_v106" },
         parts: {},
       };
-    if (cmd.startsWith("sing_")) w.__calls.push([cmd, args]);
+    if (cmd.startsWith("sing_") || cmd.startsWith("project_") || cmd.startsWith("cache_")) w.__calls.push([cmd, args]);
     if (cmd === "sing_start") return sing.start(a.req as unknown as { parts: { name: string }[]; cache_only?: boolean });
     if (cmd === "sing_cancel") return sing.cancel();
     if (cmd === "sing_play") return sing.play(a.fromSec);
@@ -297,6 +297,11 @@ mockIPC(
     if (cmd === "score_roll") return roll(Number(a.tempoFactor) || 1);
     if (cmd === "sing_track_info") return trackInfo(String(a.part));
     if (cmd === "plugin:dialog|ask") return true;
+    // ask() with custom labels: the confirming button
+    if (cmd === "plugin:dialog|message") {
+      const b = (args as { buttons?: { OkCancelCustom?: [string, string] } }).buttons;
+      return b?.OkCancelCustom?.[0] ?? "Ok";
+    }
     if (cmd === "sing_stop") return sing.stop();
     if (cmd === "sing_export") return a.path;
     if (cmd === "plugin:dialog|open") return "/Users/utente/Music/Santo.mscz";

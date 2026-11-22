@@ -1001,9 +1001,9 @@ fn restore_audio(sing: &Sing, path: &Path) {
 fn current_audio(sing: &Sing) -> Option<Vec<project::AudioEntry>> {
     sing.last_parts()
         .into_iter()
-        .map(|(part, key)| {
-            let (flac, scale, info) = sing.part_audio(key)?;
-            Some(project::AudioEntry { meta: project::AudioPart { part, key: format!("{key:016x}"), scale }, flac, info })
+        .map(|last| {
+            let (flac, scale, info) = sing.part_audio(&last)?;
+            Some(project::AudioEntry { meta: project::AudioPart { part: last.part, key: format!("{:016x}", last.portable), scale }, flac, info })
         })
         .collect()
 }
@@ -1028,18 +1028,20 @@ pub async fn project_save(
             p.set_extension(project::EXTENSION);
         }
         let score = std::fs::read(&score_path)?;
-        let from = from.map(PathBuf::from).unwrap_or_else(|| p.clone());
+        // the voices already in the file the project was opened from (none for a new project)
+        let from = from.map(PathBuf::from);
+        let keep = || from.as_deref().map_or(project::Audio::None, project::Audio::KeepFrom);
         let t0 = std::time::Instant::now();
         let audio = match audio.as_deref() {
             Some("none") => project::Audio::None,
             Some("current") => match current_audio(&sing) {
                 Some(parts) => project::Audio::Parts(parts),
                 None => {
-                    crate::log!("progetto: voci non più nella cache, tengo quelle del file");
-                    project::Audio::KeepFrom(&from)
+                    crate::log!("progetto: voci generate non disponibili, tengo quelle del file");
+                    keep()
                 }
             },
-            _ => project::Audio::KeepFrom(&from),
+            _ => keep(),
         };
         project::save(&p, &project, &score, audio)?;
         crate::log!("progetto salvato in {:.1} s", t0.elapsed().as_secs_f64());

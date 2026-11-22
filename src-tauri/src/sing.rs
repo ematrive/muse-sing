@@ -175,6 +175,15 @@ pub struct Track {
     pub samples: Arc<Vec<f32>>,
 }
 
+/// A finished sung part of a render: its cache key on this Mac and the portable one, which names
+/// it in a project file.
+#[derive(Debug, Clone)]
+pub struct LastPart {
+    pub part: String,
+    pub key: u64,
+    pub portable: u64,
+}
+
 /// Beats (seconds, first of the measure) and sung notes (start, end, pitch) in seconds.
 type Timeline = (Vec<(f64, bool)>, Vec<(f64, f64, i32)>);
 
@@ -194,7 +203,7 @@ pub struct Sing {
     voicebanks: Mutex<HashMap<PathBuf, Arc<Voicebank>>>,
     cache_dir: Option<PathBuf>,
     /// Sung parts of the last render and the cache key of each finished part (`part_file_name`).
-    last_parts: Mutex<Vec<(String, u64)>>,
+    last_parts: Mutex<Vec<LastPart>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -259,26 +268,36 @@ impl Sing {
         self.cache_dir.as_deref()
     }
 
-    /// The finished sung parts of the last render: (part, key of `part_file_name`).
-    pub fn last_parts(&self) -> Vec<(String, u64)> {
+    /// The finished sung parts of the last render.
+    pub fn last_parts(&self) -> Vec<LastPart> {
         lock(&self.last_parts).clone()
     }
 
-    /// A finished part as kept in a project: (FLAC, scale, TrackInfo JSON). The FLAC is made
-    /// once and kept next to the samples (`.flac`: the scale as f32, then the FLAC stream).
-    pub fn part_audio(&self, key: u64) -> Option<(Vec<u8>, f32, Vec<u8>)> {
-        let f32_file = self.cache_dir.as_ref()?.join(part_file_name(key));
-        let info = std::fs::read(f32_file.with_extension("json")).ok()?;
-        let flac_file = f32_file.with_extension("flac");
-        if let Some(bytes) = std::fs::read(&flac_file).ok().filter(|b| b.len() > 4) {
+    /// A finished part of the last render as kept in a project: (FLAC, scale, TrackInfo JSON).
+    /// The FLAC is made once and kept in the cache next to the samples (`.flac`: the scale as
+    /// f32, then the FLAC stream); with the cache emptied it is made from the tracks in memory.
+    pub fn part_audio(&self, last: &LastPart) -> Option<(Vec<u8>, f32, Vec<u8>)> {
+        let f32_file = self.cache_dir.as_ref().map(|d| d.join(part_file_name(last.key)));
+        let flac_file = f32_file.as_ref().map(|f| f.with_extension("flac"));
+        let info = match f32_file.as_ref().and_then(|f| std::fs::read(f.with_extension("json")).ok()) {
+            Some(i) => i,
+            None => serde_json::to_vec(&*self.track_info(&last.part)?).ok()?,
+        };
+        if let Some(bytes) = flac_file.as_ref().and_then(|f| std::fs::read(f).ok()).filter(|b| b.len() > 4) {
             let scale = f32::from_le_bytes(bytes[..4].try_into().ok()?);
             return Some((bytes[4..].to_vec(), scale, info));
         }
-        let samples = read_cache(&f32_file)?;
+        let samples = match f32_file.as_deref().and_then(read_cache) {
+            Some(s) => s,
+            None => lock(&self.tracks).iter().find(|t| t.name == last.part)?.samples.to_vec(),
+        };
         let (flac, scale) = crate::mix::flac_mono(&samples, ds::render::SAMPLE_RATE).ok()?;
-        let mut stored = scale.to_le_bytes().to_vec();
-        stored.extend_from_slice(&flac);
-        let _ = std::fs::write(&flac_file, stored);
+        if let Some(f) = &flac_file {
+            let mut stored = scale.to_le_bytes().to_vec();
+            stored.extend_from_slice(&flac);
+            let _ = f.parent().map(std::fs::create_dir_all);
+            let _ = std::fs::write(f, stored);
+        }
         Some((flac, scale, info))
     }
 
@@ -466,8 +485,21 @@ impl Sing {
             // the finished part (section, edited and score dynamics): what a project file keeps
             let member_keys: Vec<u64> = (0..voices).map(|k| member(k).2).collect();
             let part_key = fnv(&format!("part|{member_keys:?}|{:?}|{gain:?}", edits.dynamics));
+            // the same without what only this Mac knows (the voicebank's folder and file dates):
+            // the name of the voices kept in a project, found again on another computer
+            let portable_key = fnv(&format!(
+                "part|{ENGINE_VERSION}|{}|{color:?}|{pitch:?}|{}|{voices}|{tempo_key}|{notes_key}|{}|{:?}|{gain:?}",
+                singer.id.trim_start_matches("musesing:"),
+                req.lang.code(),
+                edits.render_key(),
+                edits.dynamics
+            ));
             let part_file = self.cache_dir.as_ref().map(|d| d.join(part_file_name(part_key)));
-            let part_hit = part_file.as_deref().and_then(read_cache).zip(part_file.as_ref().and_then(|f| read_info(&f.with_extension("json"))));
+            let read_part = |key: u64| {
+                let f = self.cache_dir.as_ref()?.join(part_file_name(key));
+                read_cache(&f).zip(read_info(&f.with_extension("json")))
+            };
+            let part_hit = read_part(part_key).or_else(|| read_part(portable_key));
             let (samples, main_info) = if let Some((samples, info)) = part_hit {
                 crate::log!("{name}: voce finita dalla cache");
                 progress(Progress { job, part: name.clone(), index, parts: n_parts, phrase: 1, phrases: 1, cached: true });
@@ -575,7 +607,7 @@ impl Sing {
                 }
                 (samples, main_info)
             };
-            last_parts.push((name.clone(), part_key));
+            last_parts.push(LastPart { part: name.clone(), key: part_key, portable: portable_key });
             tracks.push(Track { name: name.clone(), samples: Arc::new(samples) });
             if let Some(info) = main_info {
                 infos.insert(name.clone(), Arc::new(info));

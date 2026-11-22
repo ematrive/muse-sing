@@ -57,6 +57,7 @@ import {
   type CheckProgress,
   type PlayProgress,
   type Project as ProjectData,
+  type RenderRequest,
   type PartEdits,
   type RecentProject,
   type Roll,
@@ -133,6 +134,10 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const [guideDb, setGuideDb] = useState(-10);
 
   const renderJobRef = useRef<number | null>(null);
+  // reopening a project: its voices are read back from the cache when they are all there
+  const [restoreWanted, setRestoreWanted] = useState(0);
+  const [restoring, setRestoring] = useState(false);
+  const restoreRef = useRef<{ job: number; sig: string } | null>(null);
   renderJobRef.current = renderJob;
   const playJobRef = useRef(0);
   // «Canta e controlla»
@@ -180,9 +185,14 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   }, [loadSingers]);
 
   const [sfInstalled, setSfInstalled] = useState(false);
+  // the check is done: the voices of a reopened project can be looked up in the cache
+  const [sfKnown, setSfKnown] = useState(false);
   const [sfProgress, setSfProgress] = useState<TigerProgress | null>(null);
   useEffect(() => {
-    api.soundfontInstalled().then(setSfInstalled, () => {});
+    api
+      .soundfontInstalled()
+      .then(setSfInstalled, () => {})
+      .finally(() => setSfKnown(true));
   }, []);
   const installSoundfont = useCallback(async () => {
     setError(null);
@@ -222,6 +232,9 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     setDirty(isDirty);
     setRendered(null);
     setTab("prepara");
+    restoreRef.current = null;
+    setRestoring(false);
+    setRestoreWanted((n) => n + 1);
     setNotice(null);
     setLoop(null);
     setCursor(0);
@@ -340,6 +353,15 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
       }),
       listen<SingDone>("sing-done", (e) => {
         const d = e.payload;
+        const r = restoreRef.current;
+        if (r && d.job === r.job) {
+          restoreRef.current = null;
+          setRestoring(false);
+          if (d.error || d.cancelled || renderJobRef.current !== null) return;
+          setRendered({ sig: r.sig, seconds: d.seconds, warnings: d.warnings });
+          if (sigRef.current === r.sig) setTab("studia");
+          return;
+        }
         if (d.job !== renderJobRef.current) return;
         setRenderJob(null);
         setProgress(null);
@@ -505,25 +527,54 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const setPart = (name: string, patch: Partial<PartCfg>) =>
     setProject((p) => ({ ...p, parts: p.parts.map((x) => (x.name === name ? { ...x, ...patch } : x)) }));
 
+  const renderRequest = (cacheOnly: boolean): RenderRequest | null =>
+    project && opened
+      ? {
+          path: opened.score_path,
+          lang: project.lang,
+          pitch: project.pitch,
+          parts: renderParts,
+          tempo_factor: project.tempo_factor,
+          accompaniment: accompOn,
+          edits: renderEdits,
+          instruments: renderInstruments,
+          marks: project.marks ?? true,
+          transpose: project.transpose ?? 0,
+          cache_only: cacheOnly,
+        }
+      : null;
+
+  // a project just opened: if its voices were generated before (and are still in the cache),
+  // they are ready again without pressing Genera
+  useEffect(() => {
+    if (!restoreWanted || !sfKnown || !singers) return;
+    const req = renderRequest(true);
+    if (!req || rendered || renderJobRef.current !== null) return setRestoreWanted(0);
+    // the singers of a new project are filled in just after it opens: wait for them
+    if (nothing || missingSinger.length > 0 || notEngine.length > 0) return;
+    setRestoreWanted(0);
+    const s = sig;
+    setRestoring(true);
+    singApi.start(req).then(
+      (job) => {
+        if (renderJobRef.current === null) restoreRef.current = { job, sig: s };
+        else setRestoring(false);
+      },
+      () => setRestoring(false),
+    );
+  }, [restoreWanted, sfKnown, singers, sig]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const startRender = async (thenPlayFrom: number | null = null) => {
-    if (!project || !opened) return;
+    const req = renderRequest(false);
+    if (!req) return;
     playAfterRender.current = thenPlayFrom;
     setError(null);
     setNotice(null);
+    restoreRef.current = null;
+    setRestoring(false);
     if (play) await singApi.stop();
     try {
-      const job = await singApi.start({
-        path: opened.score_path,
-        lang: project.lang,
-        pitch: project.pitch,
-        parts: renderParts,
-        tempo_factor: project.tempo_factor,
-        accompaniment: accompOn,
-        edits: renderEdits,
-        instruments: renderInstruments,
-        marks: project.marks ?? true,
-        transpose: project.transpose ?? 0,
-      });
+      const job = await singApi.start(req);
       renderJobRef.current = job;
       setRenderJob(job);
       setProgress(null);
@@ -1107,6 +1158,10 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                       <span className="text-amber-600">{notEngine.map((p) => p.name).join(", ")}: il cantante scelto non è supportato.</span>
                     ) : rendered && !upToDate ? (
                       <span className="text-amber-600">Hai cambiato voci, cantanti, lingua, intonazione, velocità o ritocchi: genera di nuovo.</span>
+                    ) : restoring ? (
+                      <span className="flex items-center gap-2 text-zinc-500">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Ricarico le voci già generate…
+                      </span>
                     ) : !rendered ? (
                       <span className="text-zinc-500">Le voci già generate con le stesse scelte si riusano subito.</span>
                     ) : null}

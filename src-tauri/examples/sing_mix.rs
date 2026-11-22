@@ -68,6 +68,7 @@ fn main() {
         },
         marks: !args.iter().any(|a| a == "--no-marks"),
         transpose: opt("--transpose").and_then(|v| v.parse().ok()).unwrap_or(0),
+        cache_only: false,
         soundfont: opt("--soundfont").map(PathBuf::from),
     };
     let cache = std::env::temp_dir().join("muse-sing-mix-cache");

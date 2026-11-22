@@ -22,6 +22,7 @@ Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'
 - **Partiture MusicXML:** oltre ai `.mscz` si possono aprire file `.musicxml`, `.mxl` e `.xml`, esportati da Finale, Sibelius, Dorico, MuseScore o da programmi che leggono i PDF.
 - **Battute nel rullo:** il righello del rullo e dei Ritocchi mostra stanghette e numeri di battuta come nella partitura, con il metro dove cambia. Nei Ritocchi la parola indica la battuta stampata.
 - **Cambi di metro:** niente più avviso quando il metro cambia durante il brano (le note erano già a tempo). L'intestazione mostra i metri usati, a partire da quello iniziale, e il tempo (♩ o ♩.) si riferisce al metro iniziale.
+- **Voci pronte alla riapertura:** riaprendo un progetto (anche dopo aver chiuso l'app) le voci già generate tornano pronte da sole, senza premere di nuovo «Genera audio».
 - **Scarica Tiger:** se non c'è nessun cantante, un pulsante scarica TIGER DS dal sito dell'autore e lo installa, senza comandi nel Terminale.
 - **Progetti `.msng`:** i progetti hanno un'estensione più corta e si aprono con un doppio clic nel Finder. I `.musesing` si aprono ancora e al salvataggio diventano `.msng`.
 

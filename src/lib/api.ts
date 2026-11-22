@@ -184,6 +184,8 @@ export type RenderRequest = {
   instruments: Record<string, Instrument>;
   marks: boolean;
   transpose: number;
+  /** only read back the voices already in the cache (reopening a project) */
+  cache_only?: boolean;
 };
 export type PhoneInfo = { symbol: string; start: number; end: number; base: number };
 export type WordInfo = { id: string; word: string; start: number; end: number; phones: PhoneInfo[] };

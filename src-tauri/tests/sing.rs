@@ -42,6 +42,7 @@ fn renders_mixes_and_reuses_the_cache() {
         instruments: Default::default(),
         marks: true,
         transpose: 0,
+        cache_only: false,
         soundfont: None,
     };
     let t = std::time::Instant::now();
@@ -65,6 +66,20 @@ fn renders_mixes_and_reuses_the_cache() {
     let job = sing.begin();
     sing.cancel();
     assert!(sing.run(job, &req, std::slice::from_ref(&singer), &|_| {}).unwrap().is_none());
+
+    // the app opened again (a new engine, same cache): the project's voices come back without
+    // synthesizing; with other choices nothing is synthesized and the job ends as cancelled
+    let again = Sing::new(Some(cache.clone()));
+    let only = RenderRequest { cache_only: true, ..req.clone() };
+    let job = again.begin();
+    let (_, secs2) = again.run(job, &only, std::slice::from_ref(&singer), &|p| assert!(p.cached)).unwrap().expect("from the cache");
+    assert_eq!(secs2, secs);
+    assert!(again.with_tracks(|t| mix::mix(t, std::slice::from_ref(&part))).is_ok());
+    let other = RenderRequest { pitch: "model".into(), ..only };
+    let t = std::time::Instant::now();
+    let job = again.begin();
+    assert!(again.run(job, &other, std::slice::from_ref(&singer), &|p| assert!(p.cached)).unwrap().is_none());
+    assert!(t.elapsed().as_secs_f64() < 5.0, "nothing synthesized");
     std::fs::remove_dir_all(cache).ok();
 }
 
@@ -126,6 +141,7 @@ fn accompaniment_and_slower_tempo() {
             instruments: Default::default(),
             marks: true,
             transpose: 0,
+            cache_only: false,
             soundfont: None,
         };
         let job = sing.begin();
@@ -183,6 +199,7 @@ fn edits_render_only_what_changed() {
             instruments: Default::default(),
             marks: true,
             transpose: 0,
+            cache_only: false,
             soundfont: None,
         };
         let job = sing.begin();
@@ -284,6 +301,7 @@ fn edits_render_only_what_changed() {
         instruments: Default::default(),
         marks: true,
         transpose: 0,
+        cache_only: false,
         soundfont: None,
     };
     let job = sing.begin();
@@ -455,6 +473,7 @@ fn checks_a_rendered_voice() {
         instruments: Default::default(),
         marks: true,
         transpose: 0,
+        cache_only: false,
         soundfont: None,
     };
     for (cents, expected) in [(0.0f32, Verdict::InTune), (40.0, Verdict::Almost)] {

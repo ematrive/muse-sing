@@ -59,8 +59,14 @@ const sing = (() => {
   let playTimer: number | undefined;
   const total = 154;
   return {
-    start(req: { parts: { name: string }[] }) {
+    start(req: { parts: { name: string }[]; cache_only?: boolean }) {
       const me = ++job;
+      if (req.cache_only) {
+        // reopening: ready again with ?cached=1, otherwise nothing in the cache
+        const hit = !!new URLSearchParams(location.search).get("cached");
+        setTimeout(() => emit("sing-done", { job: me, error: null, cancelled: !hit, warnings: [], seconds: hit ? total : 0 }), 600);
+        return me;
+      }
       let i = 0;
       const per = 6;
       clearInterval(renderTimer);
@@ -242,7 +248,7 @@ mockIPC(
         parts: {},
       };
     if (cmd.startsWith("sing_")) w.__calls.push([cmd, args]);
-    if (cmd === "sing_start") return sing.start(a.req as unknown as { parts: { name: string }[] });
+    if (cmd === "sing_start") return sing.start(a.req as unknown as { parts: { name: string }[]; cache_only?: boolean });
     if (cmd === "sing_cancel") return sing.cancel();
     if (cmd === "sing_play") return sing.play(a.fromSec);
     if (cmd === "sing_check" || cmd === "sing_check_replay") {

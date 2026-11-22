@@ -97,6 +97,10 @@ pub struct RenderRequest {
     /// Semitones up (or down), at most ±6.
     #[serde(default)]
     pub transpose: i32,
+    /// Only read back what is already in the cache (reopening a project): if a voice would have
+    /// to be synthesized, nothing is done and the job ends as cancelled.
+    #[serde(default)]
+    pub cache_only: bool,
     /// The SoundFont, when installed (set by the app, not by the UI).
     #[serde(skip)]
     pub soundfont: Option<PathBuf>,
@@ -413,6 +417,10 @@ impl Sing {
                     crate::log!("{label}: dalla cache");
                     report(1, 1, true);
                     hit
+                } else if req.cache_only {
+                    crate::log!("{label}: non è nella cache, niente da ricaricare");
+                    let _ = self.job.compare_exchange(job, 0, Ordering::Relaxed, Ordering::Relaxed);
+                    return Ok(None);
                 } else {
                     report(0, 1, false);
                     let vb = self.voicebank(&dir)?;

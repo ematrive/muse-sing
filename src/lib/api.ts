@@ -119,6 +119,12 @@ export type Project = {
   /** semitones, ±MAX_TRANSPOSE */
   transpose: number;
   guides: GuideKind;
+  /** the part «Io canto» (missing in projects saved before it was kept here) */
+  mine?: string | null;
+  /** dB of the other voices in the study tracks */
+  guide_db?: number;
+  /** your own part under «Canta e controlla» */
+  own_voice?: "muta" | "piano" | "normale";
 };
 export const MAX_TRANSPOSE = 6;
 /** Study tracks: the part louder, the others without it, or both. */

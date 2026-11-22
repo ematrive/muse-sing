@@ -113,7 +113,6 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const [singers, setSingers] = useState<SingersList | null>(null);
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [roll, setRoll] = useState<Roll | null>(null);
-  const [mine, setMine] = useState<string | null>(readMine);
   const [tab, setTab] = useState<"prepara" | "studia">("prepara");
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -131,7 +130,6 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const [cursor, setCursor] = useState(0);
   const [loop, setLoop] = useState<[number, number] | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [guideDb, setGuideDb] = useState(-10);
 
   const renderJobRef = useRef<number | null>(null);
   // reopening a project: its voices are read back from the cache when they are all there
@@ -144,7 +142,6 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const checkJobRef = useRef(0);
   const [checking, setChecking] = useState<CheckProgress | null>(null);
   const [checkResult, setCheckResult] = useState<CheckDone | null>(null);
-  const [ownVoice, setOwnVoice] = useState<OwnVoice>("muta");
   const playingRef = useRef(play);
   playingRef.current = play;
   const seekTimer = useRef<number | undefined>(undefined);
@@ -297,6 +294,10 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   activeRef.current = active;
   const openRef = useRef(openPath);
   openRef.current = openPath;
+  const showRef = useRef(show);
+  showRef.current = show;
+  const openedRef = useRef(opened);
+  openedRef.current = opened;
   const onShowRef = useRef(onShow);
   onShowRef.current = onShow;
 
@@ -332,8 +333,25 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
       onShowRef.current?.();
       openRef.current(f);
     };
+    // at launch with nothing opened from the Finder: the last project again, as it was left
+    const reopenLast = async () => {
+      const files = await projectApi.takeOpened().catch(() => [] as string[]);
+      const f = files.find((p) => isProjectPath(p) || isScorePath(p)) ?? files[0];
+      if (f) {
+        onShowRef.current?.();
+        return openRef.current(f);
+      }
+      const last = (await projectApi.recent().catch(() => [] as RecentProject[]))[0];
+      if (!last || openedRef.current) return;
+      try {
+        const o = await projectApi.open(last.path);
+        if (!openedRef.current) showRef.current(o, false);
+      } catch {
+        /* moved or deleted: the start page lists the others */
+      }
+    };
     // once now and once more when the listener is in place (a file may arrive in between)
-    takeOpened();
+    reopenLast();
     const unOpen = listen("open-files", takeOpened);
     unOpen.then(() => takeOpened());
     return () => {
@@ -407,6 +425,12 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   // --- derived -----------------------------------------------------------------------------------
 
   const analysis = opened?.analysis ?? null;
+  // Studia's choices, kept in the project (older projects: the last «Io canto» of this computer)
+  const mine = project ? (project.mine ?? readMine()) : null;
+  const guideDb = project?.guide_db ?? -10;
+  const ownVoice: OwnVoice = project?.own_voice ?? "muta";
+  const setGuideDb = (db: number) => setProject((p) => ({ ...p, guide_db: db }));
+  const setOwnVoice = (v: OwnVoice) => setProject((p) => ({ ...p, own_voice: v }));
   const parts = project?.parts ?? [];
   const sung = parts.filter((p) => p.sing);
   const singerOf = (p: PartCfg) => singers?.singers.find((s) => s.id === p.singer);
@@ -737,7 +761,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   };
 
   const chooseMine = (name: string | null) => {
-    setMine(name);
+    setProject((p) => ({ ...p, mine: name }));
     try {
       if (name) localStorage.setItem("musesing.myPart", name);
       else localStorage.removeItem("musesing.myPart");

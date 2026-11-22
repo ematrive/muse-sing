@@ -150,6 +150,23 @@ pub struct Project {
     /// Study tracks: "evidenza" (the part louder), "senza" (without the part) or "entrambe".
     #[serde(default = "default_guides")]
     pub guides: String,
+    /// The part «Io canto» (None: none chosen, or a project saved before it was kept here).
+    #[serde(default)]
+    pub mine: Option<String>,
+    /// dB of the other voices in the study tracks.
+    #[serde(default = "default_guide_db")]
+    pub guide_db: f32,
+    /// Your own part under «Canta e controlla»: "muta", "piano" or "normale".
+    #[serde(default = "default_own_voice")]
+    pub own_voice: String,
+}
+
+fn default_guide_db() -> f32 {
+    -10.0
+}
+
+fn default_own_voice() -> String {
+    "muta".into()
 }
 
 fn yes() -> bool {
@@ -184,6 +201,9 @@ impl Project {
             marks: true,
             transpose: 0,
             guides: default_guides(),
+            mine: None,
+            guide_db: default_guide_db(),
+            own_voice: default_own_voice(),
         }
     }
 }
@@ -271,6 +291,19 @@ mod tests {
         p.tempo_factor = 0.8;
         p.parts[1].volume_db = -3.0;
         p.edits.entry("Soprano".into()).or_default().words.insert("x".into(), "y".into());
+        // every choice of the two tabs comes back as it was
+        p.parts[0].singer = "musesing:Tiger".into();
+        p.parts[0].color = Some("soft".into());
+        p.parts[0].voices = 3;
+        p.parts[1].played = true;
+        p.pitch = "notes".into();
+        p.transpose = -2;
+        p.marks = false;
+        p.count_in = true;
+        p.metronome.enabled = true;
+        p.mine = Some("Soprano".into());
+        p.guide_db = -6.0;
+        p.own_voice = "piano".into();
         let path = dir.join("t.msng");
         let xml = br#"<?xml version="1.0"?><score-partwise version="4.0"></score-partwise>"#;
         save(&path, &p, xml).unwrap();
@@ -297,6 +330,7 @@ mod tests {
         assert_eq!(p.reverb, crate::fx::DEFAULT_AMOUNT);
         assert_eq!(p.ambience, crate::fx::Ambience::Nessuno, "saved projects keep their dry sound");
         assert!(p.marks && p.transpose == 0 && p.guides == "evidenza");
+        assert!(p.mine.is_none() && p.guide_db == -10.0 && p.own_voice == "muta");
         let n = Project::new("t", "s.mscz", Lang::It, vec![], false);
         assert_eq!(n.ambience, crate::fx::Ambience::Chiesa);
         let back: Project = serde_json::from_str(&serde_json::to_string(&n).unwrap()).unwrap();

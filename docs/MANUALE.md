@@ -119,7 +119,7 @@ Per provare la tua parte e vedere come è andata, nota per nota.
    - Scegli microfono e cuffie: sono gli stessi di **Registra un cantante**.
    - Parla: la barra del livello deve muoversi. Se resta ferma, vedi «Il microfono non sente» in Problemi comuni.
    - La prima volta il Mac chiede il permesso per il microfono.
-   - Il microfono si spegne quando esci da Studia o con «spegni il microfono».
+   - Il microfono si spegne quando esci da Studia o con «Spegni il microfono».
 3. Nel **Mixer** abbassa o spegni le voci che non vuoi sentire mentre canti. Durante la prova il mixer è bloccato.
 4. Scegli cosa cantare. Di solito si parte dal cursore e si arriva alla fine; se trascini sul righello del rullo, invece, canti solo quel tratto.
 5. Scegli come sentire **la tua voce nella base**: **spenta** (canti da solo sopra le altre), **piano** (una traccia guida bassa) o **come nel mixer**.

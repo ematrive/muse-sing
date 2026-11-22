@@ -62,7 +62,7 @@ export function MixControls({
         <span className="w-10 tabular-nums">{panLabel(pan)}</span>
       </label>
       <button
-        className={`btn w-24 justify-center text-zinc-700 dark:text-zinc-300 ${mute ? "bg-zinc-200 dark:bg-zinc-700" : ""}`}
+        className={`btn w-24 justify-center ${mute ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-700 dark:text-zinc-300"}`}
         onClick={() => onChange({ mute: !mute })}
         disabled={disabled}
         title="Spegni questa traccia (in ascolto, in Canta e controlla e nei file)"
@@ -71,7 +71,7 @@ export function MixControls({
         {mute ? "spenta" : "accesa"}
       </button>
       <button
-        className={`btn justify-center text-zinc-700 dark:text-zinc-300 ${solo ? "border-amber-500 bg-amber-400 text-amber-950 hover:bg-amber-300 dark:bg-amber-400 dark:text-amber-950" : ""}`}
+        className={`btn justify-center ${solo ? "border-amber-500 bg-amber-400 text-amber-950 hover:bg-amber-300 dark:border-amber-500 dark:bg-amber-400 dark:hover:bg-amber-300" : "text-zinc-700 dark:text-zinc-300"}`}
         onClick={() => onChange({ solo: !solo })}
         disabled={disabled}
         title="Ascolta solo le tracce con «solo» acceso"

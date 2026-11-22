@@ -57,7 +57,7 @@ mod imp {
             let _: () = msg_send![device(), requestAccessForMediaType: AVMediaTypeAudio, completionHandler: &*block];
         }
         // the user has time to read the dialog; if it never answers, the stream opening says the rest
-        match rx.recv_timeout(Duration::from_secs(600)) {
+        match rx.recv_timeout(Duration::from_secs(120)) {
             Ok(true) => Access::Granted,
             Ok(false) => Access::Denied,
             Err(_) => status(),
@@ -112,15 +112,22 @@ pub fn owner() -> String {
 /// Makes sure the microphone may be used: asks macOS (showing its dialog) if it never did.
 /// The error names the app to switch on in System Settings.
 pub fn ensure() -> crate::error::Result<()> {
-    let mut s = imp::status();
-    if s == Access::Undetermined {
-        s = imp::request();
-    }
+    let before = imp::status();
+    let s = if before == Access::Undetermined { imp::request() } else { before };
+    let path = imp::responsible_path();
+    // in the terminal of `pnpm tauri dev`: what macOS said and whom it charges
+    eprintln!("microfono: permesso {before:?} → {s:?}, attribuito a {}", path.as_deref().unwrap_or("?"));
     match s {
-        Access::Granted | Access::Undetermined => Ok(()),
+        Access::Granted => Ok(()),
+        Access::Undetermined => Err(crate::error::Error::Other(format!(
+            "Microfono: macOS non ha mostrato la richiesta del permesso per «{}». Chiudi e riapri Muse Sing e riprova; se si ripete, riferisci questo messaggio. [permesso non chiesto: {}]",
+            owner(),
+            path.as_deref().unwrap_or("?")
+        ))),
         Access::Denied => Err(crate::error::Error::Other(format!(
-            "Microfono: macOS non dà il permesso a «{0}». Apri Impostazioni di Sistema → Privacy e sicurezza → Microfono, attiva «{0}» e riaccendi il microfono (a volte serve riaprire «{0}»). [permesso negato]",
-            owner()
+            "Microfono: macOS non dà il permesso a «{0}». Apri Impostazioni di Sistema → Privacy e sicurezza → Microfono, attiva «{0}» e riaccendi il microfono (a volte serve riaprire «{0}»). [permesso negato: {1}]",
+            owner(),
+            path.as_deref().unwrap_or("?")
         ))),
         Access::Restricted => Err(crate::error::Error::Other(format!(
             "Microfono: il microfono è bloccato per «{}» da un profilo o dalle restrizioni di questo Mac. [permesso limitato]",

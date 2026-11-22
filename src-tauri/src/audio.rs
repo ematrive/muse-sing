@@ -600,8 +600,6 @@ impl Engine {
     }
 
     fn open_input(&self, want: Option<&str>) -> Result<Input> {
-        // without the permission CoreAudio records silence and doesn't always show the macOS dialog
-        crate::mic_access::ensure()?;
         let (dev, info, switched) = with_retry(|| {
             pick_input(want).ok_or_else(|| cpal::Error::with_message(ErrorKind::DeviceNotAvailable, "nessun microfono"))
         })
@@ -669,6 +667,9 @@ impl Engine {
     /// Opens (or reopens with other devices) the streams for a recording session: microphone first,
     /// then the output, then waits until both run steadily.
     pub fn open(&self, input: Option<String>, output: Option<String>) -> Result<Status> {
+        // before any lock: the macOS dialog waits for the user. Without the permission CoreAudio
+        // records silence and doesn't always show the dialog itself.
+        crate::mic_access::ensure()?;
         let changed = {
             let mut p = lock(&self.prefs);
             let changed = *p != (input.clone(), output.clone());

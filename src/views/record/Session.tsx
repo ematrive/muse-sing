@@ -614,11 +614,11 @@ export function Session({
                 <span className="w-24 text-xs tabular-nums text-zinc-500">
                   {fmtSec(posBeats * beatSec)} / {fmtSec(total * beatSec)}
                 </span>
-                <div className="flex overflow-hidden rounded-md border border-zinc-300 text-xs dark:border-zinc-700" title="Velocità della guida (non della registrazione)">
+                <div className="seg" title="Velocità della guida (non della registrazione)">
                   {SPEEDS.map((s) => (
                     <button
                       key={s}
-                      className={`px-2 py-1.5 ${speed === s ? "bg-violet-600 text-white" : "bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800"}`}
+                      className={`px-2.5 ${speed === s ? "bg-violet-600 text-white" : "bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800"}`}
                       onClick={() => setSpeed(s)}
                     >
                       {Math.round(s * 100)}%

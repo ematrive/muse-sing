@@ -211,7 +211,7 @@ function trackInfo(part: string) {
 // ?mute=1: a microphone that sends nothing (permission missing)
 setInterval(() => emit("audio-level", q.get("mute") ? 0 : 0.05 + Math.random() * 0.25), 50);
 // for UI checks: inject events and look at the commands sent
-const w = window as unknown as { __emit: typeof emit; __calls: [string, unknown][] };
+const w = window as unknown as { __emit: typeof emit; __calls: [string, unknown][]; __cacheCleared?: boolean };
 w.__emit = emit;
 w.__calls = [];
 
@@ -286,6 +286,12 @@ mockIPC(
     if (cmd === "project_new" || cmd === "project_open") return opened(cmd === "project_open" ? "/Users/utente/Music/Santo.msng" : null);
     if (cmd === "project_save") return String(a.path).endsWith(".msng") ? a.path : `${a.path}.msng`;
     if (cmd === "project_reload_score") return opened(null);
+    if (cmd === "project_sizes")
+      return q.get("cached")
+        ? { total: 31_400_000, score: 48_210, settings: 3_900, audio: 31_340_000, audio_parts: ["Soprano", "Contralto", "Baritono"] }
+        : { total: 52_300, score: 48_210, settings: 3_900, audio: 0, audio_parts: [] };
+    if (cmd === "cache_size") return w.__cacheCleared ? 0 : 734_000_000;
+    if (cmd === "cache_clear") return void (w.__cacheCleared = true);
     if (cmd === "project_recent") return [{ path: "/Users/utente/Music/Santo.msng", title: "Santo" }];
     if (cmd === "take_opened_files") return [];
     if (cmd === "score_roll") return roll(Number(a.tempoFactor) || 1);

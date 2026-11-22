@@ -193,6 +193,8 @@ pub struct Sing {
     melodies: Mutex<HashMap<String, Vec<crate::check::RefNote>>>,
     voicebanks: Mutex<HashMap<PathBuf, Arc<Voicebank>>>,
     cache_dir: Option<PathBuf>,
+    /// Sung parts of the last render and the cache key of each finished part (`part_file_name`).
+    last_parts: Mutex<Vec<(String, u64)>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -225,6 +227,7 @@ impl Sing {
             melodies: Mutex::new(HashMap::new()),
             voicebanks: Mutex::new(HashMap::new()),
             cache_dir: cache_dir.map(|d| d.join("render")),
+            last_parts: Mutex::new(vec![]),
         }
     }
 
@@ -249,6 +252,52 @@ impl Sing {
         let vb = Arc::new(Voicebank::load(dir)?);
         lock(&self.voicebanks).insert(dir.to_path_buf(), vb.clone());
         Ok(vb)
+    }
+
+    /// The folder of the rendered voices (None without a cache).
+    pub fn cache_dir(&self) -> Option<&Path> {
+        self.cache_dir.as_deref()
+    }
+
+    /// The finished sung parts of the last render: (part, key of `part_file_name`).
+    pub fn last_parts(&self) -> Vec<(String, u64)> {
+        lock(&self.last_parts).clone()
+    }
+
+    /// A finished part as kept in a project: (FLAC, scale, TrackInfo JSON). The FLAC is made
+    /// once and kept next to the samples (`.flac`: the scale as f32, then the FLAC stream).
+    pub fn part_audio(&self, key: u64) -> Option<(Vec<u8>, f32, Vec<u8>)> {
+        let f32_file = self.cache_dir.as_ref()?.join(part_file_name(key));
+        let info = std::fs::read(f32_file.with_extension("json")).ok()?;
+        let flac_file = f32_file.with_extension("flac");
+        if let Some(bytes) = std::fs::read(&flac_file).ok().filter(|b| b.len() > 4) {
+            let scale = f32::from_le_bytes(bytes[..4].try_into().ok()?);
+            return Some((bytes[4..].to_vec(), scale, info));
+        }
+        let samples = read_cache(&f32_file)?;
+        let (flac, scale) = crate::mix::flac_mono(&samples, ds::render::SAMPLE_RATE).ok()?;
+        let mut stored = scale.to_le_bytes().to_vec();
+        stored.extend_from_slice(&flac);
+        let _ = std::fs::write(&flac_file, stored);
+        Some((flac, scale, info))
+    }
+
+    /// Puts a part kept in a project back into the cache (unless it is there already), so the
+    /// render finds it without synthesizing.
+    pub fn store_part_audio(&self, key: u64, flac: &[u8], scale: f32, info: &[u8]) -> Result<()> {
+        let Some(dir) = &self.cache_dir else { return Ok(()) };
+        let f32_file = dir.join(part_file_name(key));
+        if f32_file.is_file() && f32_file.with_extension("json").is_file() {
+            return Ok(());
+        }
+        let samples = crate::mix::flac_decode(flac, scale)?;
+        std::fs::create_dir_all(dir)?;
+        std::fs::write(f32_file.with_extension("json"), info)?;
+        let mut stored = scale.to_le_bytes().to_vec();
+        stored.extend_from_slice(flac);
+        std::fs::write(f32_file.with_extension("flac"), stored)?;
+        write_cache(&f32_file, &samples);
+        Ok(())
     }
 
     pub fn title(&self) -> String {
@@ -376,6 +425,7 @@ impl Sing {
 
         let mut warnings = vec![];
         let mut tracks = vec![];
+        let mut last_parts = vec![];
         let mut infos = HashMap::new();
         let n_parts = parts.len();
         for (index, (name, notes)) in parts.iter().enumerate() {
@@ -390,12 +440,10 @@ impl Sing {
             let voices = req.parts.iter().find(|p| &p.name == name).map_or(1, |p| p.voices.clamp(1, MAX_VOICES as u8) as usize);
             let all_colors = if voices > 1 { self.voicebank(&dir)?.colors() } else { vec![] };
             crate::log!("{name}: cantante {} ({}), colore {:?}, coristi {voices}", singer.name, singer.path, color);
-            let mut section: Vec<f32> = vec![];
-            let mut main_info: Option<TrackInfo> = None;
-            for (k, &(cents, delay_ms)) in SECTION.iter().enumerate().take(voices) {
+            // the cache key of each singer of the section
+            let member = |k: usize| -> (Option<String>, String, u64) {
                 // the other singers of the section: other colours, slightly off pitch and late
                 let color = if k == 0 { color.clone() } else { section_color(&all_colors, color.as_deref(), k) };
-                let label = if voices > 1 { format!("{name} (corista {}/{voices})", k + 1) } else { name.clone() };
                 let salt = format!(
                     "{ENGINE_VERSION}|{}|{}|{}|{:?}|{:?}|{}{}",
                     singer.path,
@@ -407,101 +455,127 @@ impl Sing {
                     if k > 0 { format!("|corista {k}") } else { String::new() },
                 );
                 let key = fnv(&format!("{salt}|{tempo_key}|{notes_key}|{}", edits.render_key()));
-                let cache_file = self.cache_dir.as_ref().map(|d| d.join(format!("{key:016x}.f32")));
-                let info_file = cache_file.as_ref().map(|f| f.with_extension("json"));
-                let report = |phrase: usize, phrases: usize, cached: bool| {
-                    progress(Progress { job, part: label.clone(), index, parts: n_parts, phrase, phrases, cached });
-                };
-                let hit = cache_file.as_deref().and_then(read_cache).zip(info_file.as_deref().and_then(read_info));
-                let (samples, info) = if let Some(hit) = hit {
-                    crate::log!("{label}: dalla cache");
-                    report(1, 1, true);
-                    hit
-                } else if req.cache_only {
-                    crate::log!("{label}: non è nella cache, niente da ricaricare");
-                    let _ = self.job.compare_exchange(job, 0, Ordering::Relaxed, Ordering::Relaxed);
-                    return Ok(None);
-                } else {
-                    report(0, 1, false);
-                    let vb = self.voicebank(&dir)?;
-                    let settings = Settings { pitch, speaker: color.clone(), ..Settings::default() };
-                    let speaker = vb.speaker_suffix(color.as_deref());
-                    let t0 = std::time::Instant::now();
-                    let mut ph =
-                        ds::phonemize::phonemize(&vb, req.lang, notes, &axis, &speaker).map_err(|e| Error::Other(format!("{name}: {e}")))?;
-                    crate::log!("{label}: {} note, {} fonemi in {:.1} s, {} avvisi", notes.len(), ph.phones.len(), t0.elapsed().as_secs_f64(), ph.warnings.len());
-                    if k == 0 {
-                        warnings.extend(ph.warnings.iter().map(|w| format!("{name}: {w}")));
-                    }
-                    let base: Vec<i64> = ph.phones.iter().map(|p| p.position).collect();
-                    let word_of: HashMap<&str, String> =
-                        notes.iter().filter(|n| !n.lyric.starts_with('+')).map(|n| (n.id.as_str(), split_hint(&n.lyric).0)).collect();
-                    let matches = |id: &str, w: &crate::edits::WordEdit| word_of.get(id).is_some_and(|x| w.word.is_empty() || *x == w.word);
-                    if k == 0 {
-                        for (id, w) in edits.notes.iter().filter(|(id, w)| !w.is_empty() && !matches(id, w)) {
-                            let bar = id.split('.').next().unwrap_or("?");
-                            warnings.push(format!("{name}: ritocco di «{}» (battuta {bar}) non applicato: lì la partitura ora ha un'altra parola", w.word));
-                        }
-                    }
-                    let offsets: HashMap<String, Vec<f64>> = edits
-                        .notes
-                        .iter()
-                        .filter(|(id, w)| w.offsets.iter().any(|o| *o != 0.0) && matches(id, w))
-                        .map(|(k, w)| (k.clone(), w.offsets.clone()))
-                        .collect();
-                    ds::phonemize::shift_phonemes(&mut ph, notes, &axis, &offsets);
-                    let curve = |ms: f64| {
-                        let tick = axis.ms_to_tick(ms) as f64;
-                        [edits.pitch.at(tick, 0.0) + cents, edits.gender.at(tick, 0.0), edits.velocity.at(tick, 0.0)]
-                    };
-                    let phrase_cache = self.cache_dir.as_ref().map(|d| DiskPhrases(d.clone()));
-                    let rendered = ds::render::render_track(
-                        &vb,
-                        &ph,
-                        notes,
-                        &axis,
-                        &settings,
-                        &curve,
-                        phrase_cache.as_ref().map(|c| (c as &dyn ds::render::PhraseCache, salt.as_str())),
-                        |i, n| {
-                            report(i, n, false);
-                            self.is_current(job)
-                        },
-                    )
-                    .map_err(|e| Error::Other(format!("{name}: {e}")))?;
-                    let Some(out) = rendered else { return Ok(None) };
-                    crate::log!("{label}: {} frasi sintetizzate ora, le altre dalla cache", out.rendered);
-                    if k == 0 {
-                        warnings.extend(out.warnings.into_iter().map(|w| format!("{name}: {w}")));
-                    }
-                    let info = TrackInfo {
-                        words: word_info(&ph, notes, &base, &axis),
-                        pitch: out.pitch,
-                        phonemes: ds::phonemize::singer_phonemes(&vb, req.lang).unwrap_or_default(),
-                        gender: vb.config.use_key_shift_embed,
-                        velocity: vb.config.use_speed_embed,
-                    };
-                    if let (Some(f), Some(i)) = (&cache_file, &info_file) {
-                        write_cache(f, &out.samples);
-                        write_info(i, &info);
-                    }
-                    (out.samples, info)
-                };
-                add_section_voice(&mut section, &samples, delay_ms, voices);
-                if k == 0 {
-                    main_info = Some(info);
-                }
-                if !self.is_current(job) {
-                    return Ok(None);
-                }
-            }
-            let mut samples = section;
-            apply_dynamics(&mut samples, edits, &axis);
+                (color, salt, key)
+            };
             // dynamics and hairpins of the score
-            if let Some(p) = sc.parts.iter().find(|p| &p.name == name) {
-                let curve: Vec<(f64, f32)> = crate::marks::gain_curve(p).into_iter().map(|(b, db)| (beats_secs(&axis, b), db)).collect();
-                apply_gain(&mut samples, &curve);
-            }
+            let gain: Vec<(f64, f32)> = sc
+                .parts
+                .iter()
+                .find(|p| &p.name == name)
+                .map_or(vec![], |p| crate::marks::gain_curve(p).into_iter().map(|(b, db)| (beats_secs(&axis, b), db)).collect());
+            // the finished part (section, edited and score dynamics): what a project file keeps
+            let member_keys: Vec<u64> = (0..voices).map(|k| member(k).2).collect();
+            let part_key = fnv(&format!("part|{member_keys:?}|{:?}|{gain:?}", edits.dynamics));
+            let part_file = self.cache_dir.as_ref().map(|d| d.join(part_file_name(part_key)));
+            let part_hit = part_file.as_deref().and_then(read_cache).zip(part_file.as_ref().and_then(|f| read_info(&f.with_extension("json"))));
+            let (samples, main_info) = if let Some((samples, info)) = part_hit {
+                crate::log!("{name}: voce finita dalla cache");
+                progress(Progress { job, part: name.clone(), index, parts: n_parts, phrase: 1, phrases: 1, cached: true });
+                (samples, Some(info))
+            } else {
+                let mut section: Vec<f32> = vec![];
+                let mut main_info: Option<TrackInfo> = None;
+                for (k, &(cents, delay_ms)) in SECTION.iter().enumerate().take(voices) {
+                    let (color, salt, key) = member(k);
+                    let label = if voices > 1 { format!("{name} (corista {}/{voices})", k + 1) } else { name.clone() };
+                    let cache_file = self.cache_dir.as_ref().map(|d| d.join(format!("{key:016x}.f32")));
+                    let info_file = cache_file.as_ref().map(|f| f.with_extension("json"));
+                    let report = |phrase: usize, phrases: usize, cached: bool| {
+                        progress(Progress { job, part: label.clone(), index, parts: n_parts, phrase, phrases, cached });
+                    };
+                    let hit = cache_file.as_deref().and_then(read_cache).zip(info_file.as_deref().and_then(read_info));
+                    let (samples, info) = if let Some(hit) = hit {
+                        crate::log!("{label}: dalla cache");
+                        report(1, 1, true);
+                        hit
+                    } else if req.cache_only {
+                        crate::log!("{label}: non è nella cache, niente da ricaricare");
+                        let _ = self.job.compare_exchange(job, 0, Ordering::Relaxed, Ordering::Relaxed);
+                        return Ok(None);
+                    } else {
+                        report(0, 1, false);
+                        let vb = self.voicebank(&dir)?;
+                        let settings = Settings { pitch, speaker: color.clone(), ..Settings::default() };
+                        let speaker = vb.speaker_suffix(color.as_deref());
+                        let t0 = std::time::Instant::now();
+                        let mut ph =
+                            ds::phonemize::phonemize(&vb, req.lang, notes, &axis, &speaker).map_err(|e| Error::Other(format!("{name}: {e}")))?;
+                        crate::log!("{label}: {} note, {} fonemi in {:.1} s, {} avvisi", notes.len(), ph.phones.len(), t0.elapsed().as_secs_f64(), ph.warnings.len());
+                        if k == 0 {
+                            warnings.extend(ph.warnings.iter().map(|w| format!("{name}: {w}")));
+                        }
+                        let base: Vec<i64> = ph.phones.iter().map(|p| p.position).collect();
+                        let word_of: HashMap<&str, String> =
+                            notes.iter().filter(|n| !n.lyric.starts_with('+')).map(|n| (n.id.as_str(), split_hint(&n.lyric).0)).collect();
+                        let matches = |id: &str, w: &crate::edits::WordEdit| word_of.get(id).is_some_and(|x| w.word.is_empty() || *x == w.word);
+                        if k == 0 {
+                            for (id, w) in edits.notes.iter().filter(|(id, w)| !w.is_empty() && !matches(id, w)) {
+                                let bar = id.split('.').next().unwrap_or("?");
+                                warnings.push(format!("{name}: ritocco di «{}» (battuta {bar}) non applicato: lì la partitura ora ha un'altra parola", w.word));
+                            }
+                        }
+                        let offsets: HashMap<String, Vec<f64>> = edits
+                            .notes
+                            .iter()
+                            .filter(|(id, w)| w.offsets.iter().any(|o| *o != 0.0) && matches(id, w))
+                            .map(|(k, w)| (k.clone(), w.offsets.clone()))
+                            .collect();
+                        ds::phonemize::shift_phonemes(&mut ph, notes, &axis, &offsets);
+                        let curve = |ms: f64| {
+                            let tick = axis.ms_to_tick(ms) as f64;
+                            [edits.pitch.at(tick, 0.0) + cents, edits.gender.at(tick, 0.0), edits.velocity.at(tick, 0.0)]
+                        };
+                        let phrase_cache = self.cache_dir.as_ref().map(|d| DiskPhrases(d.clone()));
+                        let rendered = ds::render::render_track(
+                            &vb,
+                            &ph,
+                            notes,
+                            &axis,
+                            &settings,
+                            &curve,
+                            phrase_cache.as_ref().map(|c| (c as &dyn ds::render::PhraseCache, salt.as_str())),
+                            |i, n| {
+                                report(i, n, false);
+                                self.is_current(job)
+                            },
+                        )
+                        .map_err(|e| Error::Other(format!("{name}: {e}")))?;
+                        let Some(out) = rendered else { return Ok(None) };
+                        crate::log!("{label}: {} frasi sintetizzate ora, le altre dalla cache", out.rendered);
+                        if k == 0 {
+                            warnings.extend(out.warnings.into_iter().map(|w| format!("{name}: {w}")));
+                        }
+                        let info = TrackInfo {
+                            words: word_info(&ph, notes, &base, &axis),
+                            pitch: out.pitch,
+                            phonemes: ds::phonemize::singer_phonemes(&vb, req.lang).unwrap_or_default(),
+                            gender: vb.config.use_key_shift_embed,
+                            velocity: vb.config.use_speed_embed,
+                        };
+                        if let (Some(f), Some(i)) = (&cache_file, &info_file) {
+                            write_cache(f, &out.samples);
+                            write_info(i, &info);
+                        }
+                        (out.samples, info)
+                    };
+                    add_section_voice(&mut section, &samples, delay_ms, voices);
+                    if k == 0 {
+                        main_info = Some(info);
+                    }
+                    if !self.is_current(job) {
+                        return Ok(None);
+                    }
+                }
+                let mut samples = section;
+                apply_dynamics(&mut samples, edits, &axis);
+                apply_gain(&mut samples, &gain);
+                if let (Some(f), Some(i)) = (&part_file, &main_info) {
+                    write_cache(f, &samples);
+                    write_info(&f.with_extension("json"), i);
+                }
+                (samples, main_info)
+            };
+            last_parts.push((name.clone(), part_key));
             tracks.push(Track { name: name.clone(), samples: Arc::new(samples) });
             if let Some(info) = main_info {
                 infos.insert(name.clone(), Arc::new(info));
@@ -565,6 +639,7 @@ impl Sing {
         *lock(&self.info) = infos;
         *lock(&self.title) = project.name.clone();
         *lock(&self.melodies) = melodies;
+        *lock(&self.last_parts) = last_parts;
         let _ = self.job.compare_exchange(job, 0, Ordering::Relaxed, Ordering::Relaxed);
         if let Some(d) = &self.cache_dir {
             trim_cache(d, CACHE_MAX_BYTES);
@@ -671,6 +746,11 @@ fn write_info(path: &Path, info: &TrackInfo) {
     if let Ok(text) = serde_json::to_vec(info) {
         let _ = std::fs::write(path, text);
     }
+}
+
+/// Cache file of a finished part (`.f32` samples, `.json` its TrackInfo, `.flac` once saved in a project).
+pub fn part_file_name(key: u64) -> String {
+    format!("part-{key:016x}.f32")
 }
 
 /// Cache file: little-endian f32 samples at 44.1 kHz.

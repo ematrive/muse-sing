@@ -40,6 +40,7 @@ import {
   TIGER_EVENT,
   errorText,
   LANGS,
+  AMBIENCES,
   projectApi,
   singApi,
   type Ambience,
@@ -57,6 +58,8 @@ import {
   type CheckProgress,
   type PlayProgress,
   type Project as ProjectData,
+  type ProjectSizes,
+  type AudioSave,
   type RenderRequest,
   type PartEdits,
   type RecentProject,
@@ -68,6 +71,7 @@ import {
   type TigerProgress,
 } from "../lib/api";
 import { Editor } from "./project/Editor";
+import { Info, type AudioState, type InfoPart } from "./project/Info";
 import { CheckPanel, OWN_VOICE_DB, summarize, type OwnVoice } from "./project/Check";
 import { Mixer } from "./project/Mixer";
 import { ScoreRoll } from "./project/ScoreRoll";
@@ -113,7 +117,11 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const [singers, setSingers] = useState<SingersList | null>(null);
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [roll, setRoll] = useState<Roll | null>(null);
-  const [tab, setTab] = useState<"prepara" | "studia">("prepara");
+  const [tab, setTab] = useState<"prepara" | "studia" | "info">("prepara");
+  // «Info»: what the project file and the cache weigh (read again after each save)
+  const [sizes, setSizes] = useState<ProjectSizes | null>(null);
+  const [cacheBytes, setCacheBytes] = useState<number | null>(null);
+  const [infoTick, setInfoTick] = useState(0);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -440,6 +448,17 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
   const renderParts = sung.map((p) => ({ name: p.name, singer: p.singer, color: p.color, voices: p.voices ?? 1, played: !!p.played }));
   const instrumentParts = (analysis?.parts ?? []).filter((p) => !p.sung).map((p) => p.name);
   const instrumentOf = (name: string): Instrument => project?.instruments?.[name] ?? instrumentFor(name);
+  const infoParts: InfoPart[] = (analysis?.parts ?? []).map((a) => {
+    const p = parts.find((x) => x.name === a.name);
+    if (!a.sung)
+      return accompOn
+        ? { name: a.name, how: "suonata", detail: sfInstalled ? INSTRUMENTS[instrumentOf(a.name)] : "organo semplice" }
+        : { name: a.name, how: "non suonata", detail: "accompagnamento spento" };
+    if (!p?.sing) return { name: a.name, how: "esclusa" };
+    if (p.played) return { name: a.name, how: "suonata al pianoforte", detail: `${a.notes} note` };
+    const who = [singerOf(p)?.name ?? "nessun cantante", p.color ? `colore ${p.color}` : null, (p.voices ?? 1) > 1 ? `${p.voices} coristi` : null];
+    return { name: a.name, how: "cantata", detail: `${who.filter(Boolean).join(", ")} · ${a.notes} note` };
+  });
   const renderInstruments: Record<string, Instrument> = Object.fromEntries(instrumentParts.map((n) => [n, instrumentOf(n)]));
   const renderEdits: Record<string, PartEdits> = Object.fromEntries(sung.filter((p) => project?.edits[p.name]).map((p) => [p.name, project!.edits[p.name]]));
   const sig =
@@ -460,6 +479,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
       : "";
   sigRef.current = sig;
   const upToDate = !!rendered && rendered.sig === sig;
+  const audioState: AudioState = upToDate ? "pronte" : rendered ? "vecchie" : "nessuna";
   const mix: MixPart[] = useMemo(() => {
     if (!project) return [];
     const m: MixPart[] = project.parts.filter((p) => p.sing).map(({ name, volume_db, pan, mute, solo }) => ({ name, volume_db, pan, mute, solo }));
@@ -493,6 +513,48 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     if (typeof f === "string") openPath(f);
   };
 
+  // the voices in memory when they match the choices, otherwise the ones already in the file
+  const audioSave = (p: ProjectData): AudioSave => (!(p.keep_audio ?? true) ? "none" : upToDate ? "current" : "keep");
+
+  const removeAudio = async () => {
+    if (!project || !opened?.path) return;
+    const ok = await ask("Le voci generate escono dal file del progetto, che viene salvato. Restano pronte finché l'app è aperta.", {
+      title: "Rimuovere l'audio dal progetto?",
+      kind: "warning",
+      okLabel: "Rimuovi e salva",
+      cancelLabel: "Annulla",
+    });
+    if (!ok) return;
+    const p = { ...project, keep_audio: false };
+    try {
+      await projectApi.save(opened.path, p, opened.score_path, "none", opened.path);
+      setProjectRaw(p);
+      setDirty(false);
+      setInfoTick((n) => n + 1);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  const clearCache = async () => {
+    const ok = await ask("Le voci dei progetti senza audio salvato andranno generate di nuovo.", {
+      title: "Svuotare la cache delle voci?",
+      kind: "warning",
+      okLabel: "Svuota",
+      cancelLabel: "Annulla",
+    });
+    if (!ok) return;
+    await projectApi.cacheClear().catch((e) => setError(errorText(e)));
+    setInfoTick((n) => n + 1);
+  };
+
+  useEffect(() => {
+    if (tab !== "info") return;
+    projectApi.cacheSize().then(setCacheBytes, () => setCacheBytes(null));
+    if (opened?.path) projectApi.sizes(opened.path).then(setSizes, () => setSizes(null));
+    else setSizes(null);
+  }, [tab, opened?.path, infoTick]);
+
   const saveAs = async (forceDialog: boolean) => {
     if (!project || !opened) return;
     let path = opened.path;
@@ -506,9 +568,10 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
     }
     setError(null);
     try {
-      const written = await projectApi.save(path, project, opened.score_path);
+      const written = await projectApi.save(path, project, opened.score_path, audioSave(project), opened.path);
       setOpened({ ...opened, path: written });
       setDirty(false);
+      setInfoTick((n) => n + 1);
       loadRecent();
     } catch (e) {
       setError(errorText(e));
@@ -871,6 +934,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
               [
                 ["prepara", "1 · Prepara le voci", "Lingua, cantanti, strumenti e ritocchi: tutto ciò che serve a generare l'audio"],
                 ["studia", "2 · Studia", "Mixer, ascolto, Canta e controlla, basi di studio"],
+                ["info", "Info", "Il brano, le dimensioni del progetto e della cache, l'audio salvato"],
               ] as const
             ).map(([k, label, title]) => (
               <button
@@ -880,7 +944,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                 title={k === "studia" && !rendered ? "Genera prima l'audio" : title}
                 disabled={k === "studia" && !rendered}
                 onClick={() => setTab(k)}
-                className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium disabled:opacity-40 ${tab === k ? "border-violet-600 text-violet-700 dark:text-violet-300" : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}
+                className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium disabled:opacity-40 ${k === "info" ? "ml-auto" : ""} ${tab === k ? "border-violet-600 text-violet-700 dark:text-violet-300" : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}
               >
                 {label}
               </button>
@@ -1234,7 +1298,7 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                 </section>
               )}
             </>
-          ) : (
+          ) : tab === "studia" ? (
             <>
               {(!upToDate || rendering) && (
                 <section className="card space-y-3 border-amber-300 dark:border-amber-800">
@@ -1446,6 +1510,29 @@ export default function ProjectView({ active, onShow }: { active: boolean; onSho
                 </section>
               )}
             </>
+          ) : (
+            <Info
+              heading={`${analysis.file_name} · ${analysis.time_sig} · ${/^(6|9|12)\/8\b/.test(analysis.time_sig) ? "♩." : "♩"} = ${analysis.bpm} · ${fmtDuration(analysis.duration_sec)}`}
+              parts={infoParts}
+              settings={[
+                ["Lingua", LANGS[project.lang]],
+                ["Intonazione", project.pitch === "notes" ? "esatta (ferma sulle note)" : "naturale (decide il cantante)"],
+                ["Velocità", `${Math.round(project.tempo_factor * 100)}%`],
+                ["Tonalità", project.transpose ? `${project.transpose > 0 ? "+" : ""}${project.transpose} semitoni` : "come scritta"],
+                ["Segni della partitura", (project.marks ?? true) ? "seguiti" : "ignorati"],
+                ["Ambiente", `${AMBIENCES[ambience]}${ambience !== "nessuno" ? `, riverbero ${Math.round((project.reverb ?? 0.5) * 100)}%` : ""}`],
+              ]}
+              path={opened?.path ?? null}
+              dirty={dirty}
+              sizes={sizes}
+              audio={audioState}
+              keepAudio={project.keep_audio ?? true}
+              onKeepAudio={(v) => setProject((p) => ({ ...p, keep_audio: v }))}
+              onRemoveAudio={removeAudio}
+              cacheBytes={cacheBytes}
+              onClearCache={clearCache}
+              busy={busy || rendering}
+            />
           )}
         </>
       )}

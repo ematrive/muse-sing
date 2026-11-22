@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use muse_sing_lib::lyrics::Lang;
 use muse_sing_lib::mix::{self, MixPart};
+use muse_sing_lib::project;
 use muse_sing_lib::sing::{PartReq, RenderRequest, Sing};
 use muse_sing_lib::singers::SingerInfo;
 
@@ -75,11 +76,45 @@ fn renders_mixes_and_reuses_the_cache() {
     let (_, secs2) = again.run(job, &only, std::slice::from_ref(&singer), &|p| assert!(p.cached)).unwrap().expect("from the cache");
     assert_eq!(secs2, secs);
     assert!(again.with_tracks(|t| mix::mix(t, std::slice::from_ref(&part))).is_ok());
-    let other = RenderRequest { pitch: "model".into(), ..only };
+    let other = RenderRequest { pitch: "model".into(), ..only.clone() };
     let t = std::time::Instant::now();
     let job = again.begin();
     assert!(again.run(job, &other, std::slice::from_ref(&singer), &|p| assert!(p.cached)).unwrap().is_none());
     assert!(t.elapsed().as_secs_f64() < 5.0, "nothing synthesized");
+
+    // the voices saved in the project file, the cache emptied, the project opened again
+    let job = sing.begin();
+    sing.run(job, &req, std::slice::from_ref(&singer), &|_| {}).unwrap().unwrap();
+    let before = sing.with_tracks(|t| t.iter().find(|(n, _)| n == "Soprano").map(|(_, s)| s.to_vec())).unwrap().unwrap();
+    let entries: Vec<project::AudioEntry> = sing
+        .last_parts()
+        .into_iter()
+        .map(|(part, key)| {
+            let (flac, scale, info) = sing.part_audio(key).expect("in the cache");
+            project::AudioEntry { meta: project::AudioPart { part, key: format!("{key:016x}"), scale }, flac, info }
+        })
+        .collect();
+    assert_eq!(entries.len(), 1);
+    let file = cache.with_extension("msng");
+    let p = project::Project::new("Agnello", "agnello.mscz", Lang::It, vec![], false);
+    project::save(&file, &p, &std::fs::read(&score).unwrap(), project::Audio::Parts(entries)).unwrap();
+    let sizes = project::sizes(&file).unwrap();
+    eprintln!("project with one voice of {secs:.0} s: {} KB (audio {} KB)", sizes.total / 1024, sizes.audio / 1024);
+    std::fs::remove_dir_all(&cache).unwrap();
+    let fresh = Sing::new(Some(cache.clone()));
+    for e in project::audio(&file).unwrap() {
+        fresh.store_part_audio(u64::from_str_radix(&e.meta.key, 16).unwrap(), &e.flac, e.meta.scale, &e.info).unwrap();
+    }
+    let t = std::time::Instant::now();
+    let job = fresh.begin();
+    fresh.run(job, &only, std::slice::from_ref(&singer), &|p| assert!(p.cached)).unwrap().expect("from the project's voices");
+    assert!(t.elapsed().as_secs_f64() < 5.0);
+    let after = fresh.with_tracks(|t| t.iter().find(|(n, _)| n == "Soprano").map(|(_, s)| s.to_vec())).unwrap().unwrap();
+    assert_eq!(after.len(), before.len());
+    let err = before.iter().zip(&after).fold(0f32, |m, (a, b)| m.max((a - b).abs()));
+    assert!(err < 1e-3, "16-bit copy: max error {err}");
+    assert!(fresh.track_info("Soprano").is_some(), "the editor has its words");
+    std::fs::remove_file(&file).ok();
     std::fs::remove_dir_all(cache).ok();
 }
 
@@ -208,7 +243,11 @@ fn edits_render_only_what_changed() {
         let samples = sing.with_tracks(|t| t[0].1.to_vec()).unwrap();
         (info, samples)
     };
-    let phrase_files = || std::fs::read_dir(cache.join("render")).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with('p')).count();
+    // rendered phrases (`p<key>.f32`), not the finished parts (`part-<key>.f32`)
+    let phrase_files = || {
+        let is_phrase = |n: &str| n.starts_with('p') && !n.starts_with("part-");
+        std::fs::read_dir(cache.join("render")).unwrap().flatten().filter(|e| is_phrase(&e.file_name().to_string_lossy())).count()
+    };
     let pitch_at = |info: &muse_sing_lib::sing::TrackInfo, sec: f64| -> f32 {
         let seg = info.pitch.iter().find(|s| s.start <= sec && sec < s.start + s.step * s.midi.len() as f64).expect("sung there");
         seg.midi[((sec - seg.start) / seg.step) as usize]

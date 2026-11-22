@@ -41,7 +41,7 @@ Serve un Mac con processore Apple (M1 o successivi): sui Mac Intel funziona solo
 
 ## Canta una partitura
 
-Ogni brano diventa un **progetto** (file `.msng`): contiene una copia della partitura, i cantanti scelti, il mix e le altre impostazioni. Puoi spostarlo o mandarlo a qualcuno: si apre anche senza la partitura originale. I progetti `.musesing` delle versioni precedenti si aprono ancora: al primo salvataggio diventano `.msng` (il vecchio file resta dov'era). L'audio generato non è nel file, ma Muse Sing lo ricorda: riaprendo il progetto le voci già generate con le stesse scelte tornano pronte da sole (per qualche secondo compare «Ricarico le voci già generate…») e si apre subito la scheda Studia. Se hai cambiato qualcosa, o se la cache è stata svuotata, serve di nuovo «Genera audio». Nel progetto si salvano tutte le scelte: cantanti, colori, coristi, lingua, intonazione, velocità, tonalità, strumenti, ritocchi, mixer, metronomo, ambiente, e anche «Io canto», la tua voce nella base e il volume delle altre voci nelle basi. All'avvio Muse Sing riapre da solo l'ultimo progetto usato.
+Ogni brano diventa un **progetto** (file `.msng`): contiene una copia della partitura, i cantanti scelti, il mix e le altre impostazioni. Puoi spostarlo o mandarlo a qualcuno: si apre anche senza la partitura originale. I progetti `.musesing` delle versioni precedenti si aprono ancora: al primo salvataggio diventano `.msng` (il vecchio file resta dov'era). Salvando, nel file vanno anche le **voci generate** (circa 2–3 MB per minuto per voce, senza perdita di qualità): riaprendo il progetto, anche su un altro Mac, tornano pronte da sole (per qualche secondo compare «Ricarico le voci già generate…») e si apre subito la scheda Studia. Le parti suonate e l'accompagnamento si rifanno da soli in pochi secondi. Se dopo l'ultima generazione hai cambiato qualcosa che tocca le voci, nel file resta l'audio di prima finché non generi di nuovo e salvi. Per un file più leggero togli la spunta «Salva l'audio nel progetto» nella scheda **Info**: le voci si ritrovano lo stesso finché sono nella cache di Muse Sing. Nel progetto si salvano tutte le scelte: cantanti, colori, coristi, lingua, intonazione, velocità, tonalità, strumenti, ritocchi, mixer, metronomo, ambiente, e anche «Io canto», la tua voce nella base e il volume delle altre voci nelle basi. All'avvio Muse Sing riapre da solo l'ultimo progetto usato.
 
 ### Creare e salvare un progetto
 
@@ -54,11 +54,15 @@ Il pallino viola accanto al nome indica modifiche non salvate: Muse Sing lo rico
 
 **Partitura corretta in MuseScore?** Premi **Ricarica partitura…** e scegli il file aggiornato: le scelte delle voci che ci sono ancora restano, poi genera di nuovo.
 
-### Le due schede
+### Le schede
 
-Il progetto ha due schede:
+Il progetto ha due schede di lavoro, più **Info**:
 - **1 · Prepara le voci:** tutto ciò che serve a generare l'audio, cioè lingua, intonazione, velocità, tonalità, cantanti, strumenti e Ritocchi. Ogni cambiamento qui richiede di generare di nuovo.
 - **2 · Studia:** si apre quando le voci sono pronte. Contiene il mixer, l'ascolto con il rullo, **Canta e controlla** e l'esportazione. Qui non si rigenera niente.
+- **Info:** il riepilogo del brano (voci, cantanti, strumenti, impostazioni), quanto pesa il file del progetto (partitura, impostazioni, audio) e la cache di Muse Sing. Da qui:
+  - **Salva l'audio nel progetto** (spunta) decide se le voci vanno nel file;
+  - **Rimuovi l'audio dal progetto** toglie le voci dal file e lo salva subito, per liberare spazio;
+  - **Svuota la cache** cancella le voci che Muse Sing tiene da parte per tutti i progetti (fino a 2 GB). I progetti con l'audio salvato restano pronti, gli altri vanno rigenerati.
 
 Finita la generazione, Muse Sing passa da solo a **Studia**. Se poi cambi qualcosa in **Prepara le voci**, in cima a **Studia** compare il pulsante per generare di nuovo.
 

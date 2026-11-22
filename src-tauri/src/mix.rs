@@ -123,6 +123,37 @@ fn flac_bytes(left: &[f32], right: &[f32], sample_rate: u32) -> Result<Vec<u8>> 
     Ok(sink.as_slice().to_vec())
 }
 
+/// One channel as 16-bit FLAC, scaled down first if it goes past full scale: (bytes, scale to
+/// multiply the decoded samples by).
+pub fn flac_mono(samples: &[f32], sample_rate: u32) -> Result<(Vec<u8>, f32)> {
+    use flacenc::component::BitRepr;
+    use flacenc::error::Verify;
+    let peak = samples.iter().fold(0f32, |m, x| m.max(x.abs()));
+    let scale = peak.max(1.0);
+    let ints: Vec<i32> = samples.iter().map(|&x| to_i16(x / scale) as i32).collect();
+    let config = flacenc::config::Encoder::default().into_verified().map_err(|e| Error::Other(format!("FLAC: {e:?}")))?;
+    let source = flacenc::source::MemSource::from_samples(&ints, 1, 16, sample_rate as usize);
+    let stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size).map_err(|e| Error::Other(format!("FLAC: {e:?}")))?;
+    let mut sink = flacenc::bitsink::ByteSink::new();
+    stream.write(&mut sink).map_err(|e| Error::Other(format!("FLAC: {e:?}")))?;
+    Ok((sink.as_slice().to_vec(), scale))
+}
+
+/// The first channel of a FLAC file, times `scale` (see `flac_mono`).
+pub fn flac_decode(bytes: &[u8], scale: f32) -> Result<Vec<f32>> {
+    let mut r = claxon::FlacReader::new(std::io::Cursor::new(bytes)).map_err(|e| Error::Format(format!("FLAC: {e}")))?;
+    let info = r.streaminfo();
+    let (channels, full) = (info.channels as usize, (1i64 << (info.bits_per_sample - 1)) as f32);
+    let mut out = Vec::with_capacity(info.samples.unwrap_or(0) as usize);
+    for (i, s) in r.samples().enumerate() {
+        let s = s.map_err(|e| Error::Format(format!("FLAC: {e}")))?;
+        if i % channels == 0 {
+            out.push(s as f32 / full * scale);
+        }
+    }
+    Ok(out)
+}
+
 fn mp3_bytes(left: &[f32], right: &[f32], sample_rate: u32, title: &str) -> Result<Vec<u8>> {
     use mp3lame_encoder::{Bitrate, Builder, DualPcm, FlushNoGap, Id3Tag, Quality};
     let err = |what: &str| {
@@ -156,6 +187,20 @@ mod tests {
 
     fn part(name: &str, volume_db: f32, pan: f32, mute: bool) -> MixPart {
         MixPart { name: name.into(), volume_db, pan, mute, solo: false }
+    }
+
+    #[test]
+    fn flac_mono_round_trip() {
+        // a voice louder than full scale (a section of three) comes back at its level
+        let x: Vec<f32> = (0..44_100).map(|i| 1.6 * (i as f32 * 0.031).sin() * (i as f32 / 44_100.0)).collect();
+        let (bytes, scale) = flac_mono(&x, 44_100).unwrap();
+        assert!(scale > 1.5 && bytes.len() < x.len() * 2, "{} bytes", bytes.len());
+        let y = flac_decode(&bytes, scale).unwrap();
+        assert_eq!(y.len(), x.len());
+        let err = x.iter().zip(&y).fold(0f32, |m, (a, b)| m.max((a - b).abs()));
+        assert!(err < 2.0 * scale / 32768.0, "max error {err}");
+        let silent = flac_mono(&vec![0.0; 44_100], 44_100).unwrap();
+        assert!(silent.0.len() < 2_000 && silent.1 == 1.0, "silence costs almost nothing");
     }
 
     #[test]

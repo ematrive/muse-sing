@@ -907,6 +907,39 @@ fn fresh_parts(a: &Analysis) -> Vec<PartCfg> {
         .collect()
 }
 
+/// What the project file weighs, piece by piece.
+#[tauri::command]
+pub async fn project_sizes(path: String) -> Result<project::Sizes> {
+    blocking(move || project::sizes(Path::new(&path))).await
+}
+
+fn dir_size(dir: &Path) -> u64 {
+    std::fs::read_dir(dir).map_or(0, |entries| {
+        entries.flatten().map(|e| e.metadata().map_or(0, |m| if m.is_dir() { dir_size(&e.path()) } else { m.len() })).sum()
+    })
+}
+
+/// Bytes of the generated voices kept in the render cache.
+#[tauri::command]
+pub async fn cache_size(sing: State<'_, SingState>) -> Result<u64> {
+    let dir = sing.0.cache_dir().map(Path::to_path_buf);
+    blocking(move || Ok(dir.map_or(0, |d| dir_size(&d)))).await
+}
+
+/// Empties the render cache (the voices in memory stay until the next render).
+#[tauri::command]
+pub async fn cache_clear(sing: State<'_, SingState>) -> Result<()> {
+    let dir = sing.0.cache_dir().map(Path::to_path_buf);
+    blocking(move || {
+        if let Some(d) = dir.filter(|d| d.is_dir()) {
+            std::fs::remove_dir_all(&d)?;
+            crate::log!("cache delle voci svuotata");
+        }
+        Ok(())
+    })
+    .await
+}
+
 fn parent_dir(p: &Path) -> String {
     p.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default()
 }
@@ -927,11 +960,13 @@ pub async fn project_new(app: tauri::AppHandle, score: String) -> Result<OpenedP
 }
 
 #[tauri::command]
-pub async fn project_open(app: tauri::AppHandle, path: String) -> Result<OpenedProject> {
+pub async fn project_open(app: tauri::AppHandle, sing: State<'_, SingState>, path: String) -> Result<OpenedProject> {
+    let sing = sing.0.clone();
     blocking(move || {
         let p = PathBuf::from(&path);
         let (project, bytes) = project::open(&p)?;
         let wc = project::working_copy(&cache_dir(&app)?, &bytes)?;
+        restore_audio(&sing, &p);
         let display = p.with_file_name(if project.score_name.is_empty() { "partitura.mscz" } else { &project.score_name });
         let analysis = analysis_of(&wc, &display)?;
         remember_project(&app, &path, &project.title);
@@ -940,16 +975,74 @@ pub async fn project_open(app: tauri::AppHandle, path: String) -> Result<OpenedP
     .await
 }
 
+/// The voices kept in a project file back into the render cache (errors only logged: the
+/// project opens anyway, and the voices can be generated again).
+fn restore_audio(sing: &Sing, path: &Path) {
+    let t0 = std::time::Instant::now();
+    match project::audio(path) {
+        Ok(parts) if !parts.is_empty() => {
+            for p in &parts {
+                let res = u64::from_str_radix(&p.meta.key, 16)
+                    .map_err(|e| Error::Format(e.to_string()))
+                    .and_then(|k| sing.store_part_audio(k, &p.flac, p.meta.scale, &p.info));
+                if let Err(e) = res {
+                    crate::log!("progetto: voce {} non ripresa dal file: {e}", p.meta.part);
+                }
+            }
+            crate::log!("progetto: {} voci riprese dal file in {:.1} s", parts.len(), t0.elapsed().as_secs_f64());
+        }
+        Ok(_) => {}
+        Err(e) => crate::log!("progetto: audio non letto: {e}"),
+    }
+}
+
+/// The voices of the last render, ready to be written in a project (None if some is no longer in
+/// the cache).
+fn current_audio(sing: &Sing) -> Option<Vec<project::AudioEntry>> {
+    sing.last_parts()
+        .into_iter()
+        .map(|(part, key)| {
+            let (flac, scale, info) = sing.part_audio(key)?;
+            Some(project::AudioEntry { meta: project::AudioPart { part, key: format!("{key:016x}"), scale }, flac, info })
+        })
+        .collect()
+}
+
 /// Saves the project with its score; returns the path written (always with the .msng extension).
+/// `audio`: "current" (the voices in memory, which match the project's choices), "keep" (the ones
+/// already in the file `from`, the project as it was opened) or "none".
 #[tauri::command]
-pub async fn project_save(app: tauri::AppHandle, path: String, project: Project, score_path: String) -> Result<String> {
+pub async fn project_save(
+    app: tauri::AppHandle,
+    sing: State<'_, SingState>,
+    path: String,
+    project: Project,
+    score_path: String,
+    audio: Option<String>,
+    from: Option<String>,
+) -> Result<String> {
+    let sing = sing.0.clone();
     blocking(move || {
         let mut p = PathBuf::from(&path);
         if p.extension().and_then(|e| e.to_str()) != Some(project::EXTENSION) {
             p.set_extension(project::EXTENSION);
         }
         let score = std::fs::read(&score_path)?;
-        project::save(&p, &project, &score)?;
+        let from = from.map(PathBuf::from).unwrap_or_else(|| p.clone());
+        let t0 = std::time::Instant::now();
+        let audio = match audio.as_deref() {
+            Some("none") => project::Audio::None,
+            Some("current") => match current_audio(&sing) {
+                Some(parts) => project::Audio::Parts(parts),
+                None => {
+                    crate::log!("progetto: voci non più nella cache, tengo quelle del file");
+                    project::Audio::KeepFrom(&from)
+                }
+            },
+            _ => project::Audio::KeepFrom(&from),
+        };
+        project::save(&p, &project, &score, audio)?;
+        crate::log!("progetto salvato in {:.1} s", t0.elapsed().as_secs_f64());
         let out = p.to_string_lossy().into_owned();
         remember_project(&app, &out, &project.title);
         Ok(out)

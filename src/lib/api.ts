@@ -125,7 +125,13 @@ export type Project = {
   guide_db?: number;
   /** your own part under «Canta e controlla» */
   own_voice?: "muta" | "piano" | "normale";
+  /** save the generated voices in the file */
+  keep_audio?: boolean;
 };
+/** The voices to save: those in memory (they match the choices), the ones already in the file, or none. */
+export type AudioSave = "current" | "keep" | "none";
+/** Bytes of a project file and of its pieces. */
+export type ProjectSizes = { total: number; score: number; settings: number; audio: number; audio_parts: string[] };
 export const MAX_TRANSPOSE = 6;
 /** Study tracks: the part louder, the others without it, or both. */
 export type GuideKind = "evidenza" | "senza" | "entrambe";
@@ -166,7 +172,13 @@ export const projectApi = {
   /** New project from a score (MuseScore or MusicXML). */
   create: (score: string) => invoke<OpenedProject>("project_new", { score }),
   open: (path: string) => invoke<OpenedProject>("project_open", { path }),
-  save: (path: string, project: Project, scorePath: string) => invoke<string>("project_save", { path, project, scorePath }),
+  /** `from`: the file the project was opened from, whose voices "keep" copies. */
+  save: (path: string, project: Project, scorePath: string, audio: AudioSave, from: string | null) =>
+    invoke<string>("project_save", { path, project, scorePath, audio, from }),
+  sizes: (path: string) => invoke<ProjectSizes>("project_sizes", { path }),
+  /** Bytes of the generated voices in Muse Sing's cache. */
+  cacheSize: () => invoke<number>("cache_size"),
+  cacheClear: () => invoke<void>("cache_clear"),
   reloadScore: (project: Project, score: string) => invoke<OpenedProject>("project_reload_score", { project, score }),
   recent: () => invoke<RecentProject[]>("project_recent"),
   /** Files the Finder asked to open (double click) and not yet opened. */

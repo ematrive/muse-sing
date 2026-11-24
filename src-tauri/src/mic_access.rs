@@ -28,9 +28,20 @@ mod imp {
     }
 
     unsafe extern "C" {
-        /// libsystem (private but stable): the process macOS charges privacy permissions to.
-        fn responsibility_get_pid_responsible_for_pid(pid: i32) -> i32;
         fn proc_pidpath(pid: i32, buf: *mut u8, size: u32) -> i32;
+        fn dlsym(handle: *mut std::ffi::c_void, symbol: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+    }
+    const RTLD_DEFAULT: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
+
+    /// `responsibility_get_pid_responsible_for_pid` (libsystem, private): the process macOS charges
+    /// privacy permissions to. Looked up at run time, so that a macOS without it still starts the app.
+    fn responsible_pid(pid: i32) -> Option<i32> {
+        let f = unsafe { dlsym(RTLD_DEFAULT, c"responsibility_get_pid_responsible_for_pid".as_ptr()) };
+        if f.is_null() {
+            return None;
+        }
+        let f: extern "C" fn(i32) -> i32 = unsafe { std::mem::transmute(f) };
+        Some(f(pid)).filter(|&p| p > 0)
     }
 
     fn device() -> &'static AnyClass {
@@ -65,11 +76,8 @@ mod imp {
     }
 
     pub fn responsible_path() -> Option<String> {
+        let pid = responsible_pid(std::process::id() as i32)?;
         unsafe {
-            let pid = responsibility_get_pid_responsible_for_pid(std::process::id() as i32);
-            if pid <= 0 {
-                return None;
-            }
             let mut buf = vec![0u8; 4096];
             let n = proc_pidpath(pid, buf.as_mut_ptr(), buf.len() as u32);
             if n <= 0 {

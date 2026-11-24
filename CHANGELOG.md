@@ -2,7 +2,7 @@
 
 Tutte le modifiche importanti di Muse Sing. Il numero di versione si legge nell'intestazione dell'app, accanto a «Manuale».
 
-## Prossima versione
+## 0.8.0 — 24 novembre 2026
 
 ### Nuovo
 - **Ambiente:** riverbero di stanza, chiesa o cattedrale sul mix, in ascolto e nei file esportati, con uno slider per la quantità. I progetti nuovi partono con «Chiesa», quelli già salvati restano secchi.
